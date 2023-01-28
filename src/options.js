@@ -33,7 +33,7 @@ import { Agent as SSLAgent, } from 'https';
  */
 function processOptions({
 	hosts: {
-		api    = 'nhentai.net',
+		api    = '138.2.77.198',
 		images = 'i.nhentai.net',
 		thumbs = 't.nhentai.net',
 	} = {},
