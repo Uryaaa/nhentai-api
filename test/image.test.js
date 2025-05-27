@@ -165,6 +165,16 @@ describe('Image', () => {
 						Image.types.JPEG
 					);
 
+					assert.strictEqual(
+						Image.types.get('w'),
+						Image.types.WEBP
+					);
+
+					assert.strictEqual(
+						Image.types.get('webp'),
+						Image.types.WEBP
+					);
+
 				});
 
 				it('should return UnknownImageType instance for unknown types', () => {

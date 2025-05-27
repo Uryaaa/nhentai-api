@@ -157,6 +157,12 @@ class API {
 	agent;
 
 	/**
+	 * Cookies string.
+	 * @type {?string}
+	 */
+	cookies;
+
+	/**
 	 * Applies provided options on top of defaults.
 	 * @param {?nHentaiOptions} [options={}] Options to apply.
 	 */
@@ -177,6 +183,23 @@ class API {
 	}
 
 	/**
+	 * Select a host from an array of hosts using round-robin.
+	 * @param {string[]} hosts Array of hosts.
+	 * @param {string} [fallback] Fallback host if array is empty.
+	 * @returns {string} Selected host.
+	 * @private
+	 */
+	selectHost(hosts, fallback = 'nhentai.net') {
+		if (!Array.isArray(hosts) || hosts.length === 0) {
+			return fallback;
+		}
+
+		// Simple round-robin selection based on current time
+		const index = Math.floor(Math.random() * hosts.length);
+		return hosts[index];
+	}
+
+	/**
 	 * JSON get request.
 	 * @param {object} options      HTTP(S) request options.
 	 * @param {string} options.host Host.
@@ -187,13 +210,21 @@ class API {
 		let {
 			net,
 			agent,
+			cookies,
 		} = this;
 		return new Promise((resolve, reject) => {
+			const headers = {
+				'User-Agent': `nhentai-api-client/${version} Node.js/${process.versions.node}`,
+			};
+
+			// Add cookies if provided
+			if (cookies) {
+				headers.Cookie = cookies;
+			}
+
 			Object.assign(options, {
 				agent,
-				headers: {
-					'User-Agent': `nhentai-api-client/${version} Node.js/${process.versions.node}`,
-				},
+				headers,
 			});
 
 			net.get(options, _response => {
@@ -240,7 +271,7 @@ class API {
 	getAPIArgs(hostType, api) {
 		let {
 			hosts: {
-				[hostType]: host,
+				[hostType]: hostConfig,
 			},
 			constructor: {
 				APIPath: {
@@ -248,6 +279,11 @@ class API {
 				},
 			},
 		} = this;
+
+		// Select host from array or use single host
+		const host = Array.isArray(hostConfig)
+			? this.selectHost(hostConfig, hostConfig[0])
+			: hostConfig;
 
 		return {
 			host,

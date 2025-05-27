@@ -13,13 +13,13 @@ export type nHentaiHosts = {
      */
     api: string | null;
     /**
-     * Media API host.
+     * Media API host(s). Can be a single host or array of hosts for load balancing.
      */
-    images: string | null;
+    images: (string | string[]) | null;
     /**
-     * Media thumbnails API host.
+     * Media thumbnails API host(s). Can be a single host or array of hosts for load balancing.
      */
-    thumbs: string | null;
+    thumbs: (string | string[]) | null;
 };
 /**
  * Common nHentai options object.
@@ -37,6 +37,10 @@ export type nHentaiOptions = {
      * HTTP(S) agent.
      */
     agent: httpAgent | null;
+    /**
+     * Cookies string in format 'cookie1=value1;cookie2=value2;...'
+     */
+    cookies: string | null;
 };
 /**
  * Agent-like object or Agent class or it's instance.
@@ -47,23 +51,24 @@ export type nHentaiOptions = {
  * Common nHentai API hosts object.
  * @global
  * @typedef {object} nHentaiHosts
- * @property {?string} api    Main API host.
- * @property {?string} images Media API host.
- * @property {?string} thumbs Media thumbnails API host.
+ * @property {?string}         api    Main API host.
+ * @property {?string|string[]} images Media API host(s). Can be a single host or array of hosts for load balancing.
+ * @property {?string|string[]} thumbs Media thumbnails API host(s). Can be a single host or array of hosts for load balancing.
  */
 /**
  * Common nHentai options object.
  * @global
  * @typedef {object} nHentaiOptions
- * @property {?nHentaiHosts} hosts Hosts.
- * @property {?boolean}      ssl   Prefer HTTPS over HTTP.
- * @property {?httpAgent}    agent HTTP(S) agent.
+ * @property {?nHentaiHosts} hosts   Hosts.
+ * @property {?boolean}      ssl     Prefer HTTPS over HTTP.
+ * @property {?httpAgent}    agent   HTTP(S) agent.
+ * @property {?string}       cookies Cookies string in format 'cookie1=value1;cookie2=value2;...'
  */
 /**
  * Applies provided options on top of defaults.
  * @param {?nHentaiOptions} [options={}] Options to apply.
  * @returns {nHentaiOptions} Unified options.
  */
-declare function processOptions({ hosts: { api, images, thumbs, }, ssl, agent, }?: nHentaiOptions | null): nHentaiOptions;
+declare function processOptions({ hosts: { api, images, thumbs, }, ssl, agent, cookies, }?: nHentaiOptions | null): nHentaiOptions;
 import { Agent } from "http";
 import { Agent as SSLAgent } from "https";

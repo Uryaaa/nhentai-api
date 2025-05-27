@@ -107,6 +107,7 @@ class Image {
 		JPEG: new ImageType('jpeg', 'jpg'),
 		PNG : new ImageType('png', 'png'),
 		GIF : new ImageType('gif', 'gif'),
+		WEBP: new ImageType('webp', 'webp'),
 
 		Unknown: new UnknownImageType('unknown', 'unknownExt'),
 
@@ -138,6 +139,10 @@ class Image {
 					case 'g':
 					case 'gif':
 						type = 'gif';
+						break;
+					case 'w':
+					case 'webp':
+						type = 'webp';
 						break;
 				}
 			}

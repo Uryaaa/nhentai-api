@@ -12,18 +12,19 @@ import { Agent as SSLAgent, } from 'https';
  * Common nHentai API hosts object.
  * @global
  * @typedef {object} nHentaiHosts
- * @property {?string} api    Main API host.
- * @property {?string} images Media API host.
- * @property {?string} thumbs Media thumbnails API host.
+ * @property {?string}         api    Main API host.
+ * @property {?string|string[]} images Media API host(s). Can be a single host or array of hosts for load balancing.
+ * @property {?string|string[]} thumbs Media thumbnails API host(s). Can be a single host or array of hosts for load balancing.
  */
 
 /**
  * Common nHentai options object.
  * @global
  * @typedef {object} nHentaiOptions
- * @property {?nHentaiHosts} hosts Hosts.
- * @property {?boolean}      ssl   Prefer HTTPS over HTTP.
- * @property {?httpAgent}    agent HTTP(S) agent.
+ * @property {?nHentaiHosts} hosts   Hosts.
+ * @property {?boolean}      ssl     Prefer HTTPS over HTTP.
+ * @property {?httpAgent}    agent   HTTP(S) agent.
+ * @property {?string}       cookies Cookies string in format 'cookie1=value1;cookie2=value2;...'
  */
 
 /**
@@ -33,12 +34,13 @@ import { Agent as SSLAgent, } from 'https';
  */
 function processOptions({
 	hosts: {
-		api    = '138.2.77.198',
+		api    = 'nhentai.net',
 		images = 'i.nhentai.net',
 		thumbs = 't.nhentai.net',
 	} = {},
-	ssl   = true,
-	agent = null,
+	ssl     = true,
+	agent   = null,
+	cookies = null,
 } = {}) {
 	if (!agent)
 		agent = ssl
@@ -48,14 +50,23 @@ function processOptions({
 	if (agent.constructor.name === 'Function')
 		agent = new agent();
 
+	// Normalize hosts to arrays for consistent handling
+	const normalizeHosts = (hostConfig) => {
+		if (typeof hostConfig === 'string') {
+			return [ hostConfig, ];
+		}
+		return Array.isArray(hostConfig) ? hostConfig : [ hostConfig, ];
+	};
+
 	return {
 		hosts: {
 			api,
-			images,
-			thumbs,
+			images: normalizeHosts(images),
+			thumbs: normalizeHosts(thumbs),
 		},
 		ssl,
 		agent,
+		cookies,
 	};
 }
 

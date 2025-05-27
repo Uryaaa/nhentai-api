@@ -11,6 +11,9 @@ Node.JS module for handling nhentai.net API.
 * Bidirectional inspecting (get image from book/get book from image).
 * Easy proxy support by using custom Agent (like [this one](https://www.npmjs.com/package/https-proxy-agent)).
 * Return URLs for binary data (images).
+* **Multiple host support** for load balancing (i1, i2, i3 for images; t1, t2, t3 for thumbnails).
+* **WebP image format support** alongside JPEG, PNG, and GIF.
+* **Cookie support** for authenticated requests.
 
 ## Install
 
@@ -52,6 +55,33 @@ import { API, TagTypes, } from 'nhentai-api';
 
 ```js
 const api = new API();
+```
+
+#### Initialize API client with custom options
+
+```js
+// With custom hosts (multiple hosts for load balancing)
+const api = new API({
+	hosts: {
+		api: 'nhentai.net',
+		images: ['i1.nhentai.net', 'i2.nhentai.net', 'i3.nhentai.net'], // Multiple image hosts
+		thumbs: ['t1.nhentai.net', 't2.nhentai.net', 't3.nhentai.net'], // Multiple thumbnail hosts
+	}
+});
+
+// With cookies support
+const api = new API({
+	cookies: 'sessionid=abc123;csrftoken=def456;other=value'
+});
+
+// With both custom hosts and cookies
+const api = new API({
+	hosts: {
+		images: ['i1.nhentai.net', 'i2.nhentai.net', 'i3.nhentai.net'],
+		thumbs: ['t1.nhentai.net', 't2.nhentai.net', 't3.nhentai.net'],
+	},
+	cookies: 'sessionid=abc123;csrftoken=def456'
+});
 ```
 
 #### Get the book
@@ -169,7 +199,7 @@ Get artists:
 book.artists;
 // or
 book.getTagsWith({
-	type: TagTypes.Artist, // you may also use Tag.types.Artist or Tag.types.get('artist') 
+	type: TagTypes.Artist, // you may also use Tag.types.Artist or Tag.types.get('artist')
 }); // TagsArray (subclass of Array<Tag>)
 // or
 book.getTagsWith({ type: 'artist', }); // TagsArray (subclass of Array<Tag>)

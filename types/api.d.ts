@@ -49,10 +49,23 @@ declare class API {
      */
     agent: any;
     /**
+     * Cookies string.
+     * @type {?string}
+     */
+    cookies: string | null;
+    /**
      * Get http(s) module depending on `options.ssl`.
      * @type {https|http}
      */
     get net(): any;
+    /**
+     * Select a host from an array of hosts using round-robin.
+     * @param {string[]} hosts Array of hosts.
+     * @param {string} [fallback] Fallback host if array is empty.
+     * @returns {string} Selected host.
+     * @private
+     */
+    private selectHost;
     /**
      * JSON get request.
      * @param {object} options      HTTP(S) request options.
