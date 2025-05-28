@@ -437,6 +437,38 @@ class API {
 	getImageURL(image) {
 		if (image instanceof Image) {
 			let { host, apiPath, } = image.isCover
+					? this.getAPIArgs('thumbs', 'bookCover')
+					: this.getAPIArgs('images', 'bookPage'),
+				// Handle the case where nhentai serves WebP files with original extension names
+				// E.g., cover.jpg.webp instead of cover.jpg
+				extension = image.type.extension;
+
+			// For covers, if the original extension is not webp, try webp format
+			// This handles cases where API returns 'j' but file is actually cover.jpg.webp
+			if (image.isCover && extension !== 'webp') {
+				// Try WebP format first for better compatibility with modern nhentai
+				const webpUrl = `http${this.ssl ? 's' : ''}://${host}` +
+					apiPath(image.book.media, `${extension}.webp`);
+
+				// Return WebP URL - the consumer can handle fallback if needed
+				return webpUrl;
+			}
+
+			return `http${this.ssl ? 's' : ''}://${host}` + (image.isCover
+				? apiPath(image.book.media, extension)
+				: apiPath(image.book.media, image.id, extension));
+		}
+		throw new Error('image must be Image instance.');
+	}
+
+	/**
+	 * Get image URL with original extension (fallback for when WebP fails).
+	 * @param {Image} image Image.
+	 * @returns {string} Image URL with original extension.
+	 */
+	getImageURLOriginal(image) {
+		if (image instanceof Image) {
+			let { host, apiPath, } = image.isCover
 				? this.getAPIArgs('thumbs', 'bookCover')
 				: this.getAPIArgs('images', 'bookPage');
 

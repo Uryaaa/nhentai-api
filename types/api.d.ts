@@ -141,6 +141,12 @@ declare class API {
      */
     getImageURL(image: Image): string;
     /**
+     * Get image URL with original extension (fallback for when WebP fails).
+     * @param {Image} image Image.
+     * @returns {string} Image URL with original extension.
+     */
+    getImageURLOriginal(image: Image): string;
+    /**
      * Get image thumbnail URL.
      * @param {Image} image Image.
      * @returns {string} Image thumbnail URL.
