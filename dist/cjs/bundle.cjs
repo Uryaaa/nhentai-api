@@ -1,4 +1,4 @@
-"use strict";Object.defineProperty(exports,"__esModule",{value:!0});var http=require("http"),https=require("https");function _interopDefaultLegacy(e){return e&&"object"==typeof e&&"default"in e?e:{default:e}}var http__default=_interopDefaultLegacy(http),https__default=_interopDefaultLegacy(https);function _defineProperty(obj,key,value){return key in obj?Object.defineProperty(obj,key,{value:value,enumerable:!0,configurable:!0,writable:!0}):obj[key]=value,obj}
+"use strict";Object.defineProperty(exports,"__esModule",{value:!0});var http=require("http"),https=require("https");function _interopDefaultLegacy(e){return e&&"object"==typeof e&&"default"in e?e:{default:e}}function _interopNamespace(e){if(e&&e.__esModule)return e;var n=Object.create(null);return e&&Object.keys(e).forEach((function(k){if("default"!==k){var d=Object.getOwnPropertyDescriptor(e,k);Object.defineProperty(n,k,d.get?d:{enumerable:!0,get:function(){return e[k]}})}})),n.default=e,Object.freeze(n)}var http__default=_interopDefaultLegacy(http),https__default=_interopDefaultLegacy(https);function _defineProperty(obj,key,value){return key in obj?Object.defineProperty(obj,key,{value:value,enumerable:!0,configurable:!0,writable:!0}):obj[key]=value,obj}
 /**
  * @module Tag
  */
@@ -439,10 +439,12 @@ static parse(search){return new this({pages:search.num_pages?+search.num_pages:1
  * Common nHentai options object.
  * @global
  * @typedef {object} nHentaiOptions
- * @property {?nHentaiHosts} hosts   Hosts.
- * @property {?boolean}      ssl     Prefer HTTPS over HTTP.
- * @property {?httpAgent}    agent   HTTP(S) agent.
- * @property {?string}       cookies Cookies string in format 'cookie1=value1;cookie2=value2;...'
+ * @property {?nHentaiHosts} hosts         Hosts.
+ * @property {?boolean}      ssl           Prefer HTTPS over HTTP.
+ * @property {?httpAgent}    agent         HTTP(S) agent.
+ * @property {?string}       cookies       Cookies string in format 'cookie1=value1;cookie2=value2;...'
+ * @property {?boolean}      usePuppeteer  Use Puppeteer with stealth plugin instead of native HTTP requests.
+ * @property {?string[]}     browserArgs   Additional arguments to pass to Puppeteer browser launch.
  */
 /**
  * Applies provided options on top of defaults.
@@ -509,11 +511,19 @@ class API{
    * @type {?string}
    */
 /**
+   * Use Puppeteer with stealth plugin instead of native HTTP requests.
+   * @type {?boolean}
+   */
+/**
+   * Additional arguments to pass to Puppeteer browser launch.
+   * @type {?string[]}
+   */
+/**
    * Applies provided options on top of defaults.
    * @param {?nHentaiOptions} [options={}] Options to apply.
    */
-constructor(options={}){_defineProperty(this,"hosts",void 0),_defineProperty(this,"ssl",void 0),_defineProperty(this,"agent",void 0),_defineProperty(this,"cookies",void 0);let params=function processOptions({hosts:{api:api="nhentai.net",images:images=["i1.nhentai.net","i2.nhentai.net","i3.nhentai.net"],thumbs:thumbs=["t1.nhentai.net","t2.nhentai.net","t3.nhentai.net"]}={},ssl:ssl=!0,agent:agent=null,cookies:cookies=null}={}){agent||(agent=ssl?https.Agent:http.Agent),"Function"===agent.constructor.name&&(agent=new agent);// Normalize hosts to arrays for consistent handling
-const normalizeHosts=hostConfig=>"string"==typeof hostConfig?[hostConfig]:Array.isArray(hostConfig)?hostConfig:[hostConfig];return{hosts:{api:api,images:normalizeHosts(images),thumbs:normalizeHosts(thumbs)},ssl:ssl,agent:agent,cookies:cookies}}(options);Object.assign(this,params)}
+constructor(options={}){_defineProperty(this,"hosts",void 0),_defineProperty(this,"ssl",void 0),_defineProperty(this,"agent",void 0),_defineProperty(this,"cookies",void 0),_defineProperty(this,"usePuppeteer",void 0),_defineProperty(this,"browserArgs",void 0);let params=function processOptions({hosts:{api:api="nhentai.net",images:images=["i1.nhentai.net","i2.nhentai.net","i3.nhentai.net"],thumbs:thumbs=["t1.nhentai.net","t2.nhentai.net","t3.nhentai.net"]}={},ssl:ssl=!0,agent:agent=null,cookies:cookies=null,usePuppeteer:usePuppeteer=!1,browserArgs:browserArgs=[]}={}){agent||(agent=ssl?https.Agent:http.Agent),"Function"===agent.constructor.name&&(agent=new agent);// Normalize hosts to arrays for consistent handling
+const normalizeHosts=hostConfig=>"string"==typeof hostConfig?[hostConfig]:Array.isArray(hostConfig)?hostConfig:[hostConfig];return{hosts:{api:api,images:normalizeHosts(images),thumbs:normalizeHosts(thumbs)},ssl:ssl,agent:agent,cookies:cookies,usePuppeteer:usePuppeteer,browserArgs:browserArgs}}(options);Object.assign(this,params)}
 /**
    * Get http(s) module depending on `options.ssl`.
    * @type {https|http}
@@ -532,10 +542,37 @@ return hosts[Math.floor(Math.random()*hosts.length)]}
    * @param {string} options.host Host.
    * @param {string} options.path Path.
    * @returns {Promise<object>} Parsed JSON.
-   */request(options){let{net:net,agent:agent,cookies:cookies}=this;return new Promise(((resolve,reject)=>{const headers={"User-Agent":`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`};// Add cookies if provided
+   */request(options){
+// Use Puppeteer if enabled
+if(this.usePuppeteer)return this.requestWithPuppeteer(options);// Use native HTTP requests
+let{net:net,agent:agent,cookies:cookies}=this;return new Promise(((resolve,reject)=>{const headers={"User-Agent":`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`};// Add cookies if provided
 cookies&&(headers.Cookie=cookies),Object.assign(options,{agent:agent,headers:headers}),net.get(options,(_response=>{const
 /** @type {IncomingMessage}*/
 response=_response,{statusCode:statusCode}=response,contentType=response.headers["content-type"];let error;if(200!==statusCode?error=new Error(`Request failed with status code ${statusCode}`):/^application\/json/.test(contentType)||(error=new Error(`Invalid content-type - expected application/json but received ${contentType}`)),error)return response.resume(),void reject(APIError.absorb(error,response));response.setEncoding("utf8");let rawData="";response.on("data",(chunk=>rawData+=chunk)),response.on("end",(()=>{try{resolve(JSON.parse(rawData))}catch(error){reject(APIError.absorb(error,response))}}))})).on("error",(error=>reject(APIError.absorb(error))))}))}
+/**
+   * JSON get request using Puppeteer with stealth plugin.
+   * @param {object} options      HTTP(S) request options.
+   * @param {string} options.host Host.
+   * @param {string} options.path Path.
+   * @returns {Promise<object>} Parsed JSON.
+   * @private
+   */async requestWithPuppeteer(options){let puppeteer,StealthPlugin;try{
+// Dynamic import to avoid requiring puppeteer when not needed
+puppeteer=await Promise.resolve().then((function(){return _interopNamespace(require("puppeteer-extra"))})),StealthPlugin=(await Promise.resolve().then((function(){return _interopNamespace(require("puppeteer-extra-plugin-stealth"))}))).default}catch(error){throw new Error("Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth")}// Use stealth plugin
+puppeteer.default.use(StealthPlugin());const url=`http${this.ssl?"s":""}://${options.host}${options.path}`;let browser;try{
+// Launch browser with provided arguments
+browser=await puppeteer.default.launch({headless:"new",args:this.browserArgs||[]});const page=await browser.newPage();// Set user agent
+// Set cookies if provided
+if(await page.setUserAgent(`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Navigate to the URL
+const response=await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});if(!response.ok())throw new Error(`Request failed with status code ${response.status()}`);// Get the response text
+const jsonMatch=(await page.content()).match(/<pre[^>]*>(.*?)<\/pre>/s);let jsonText;
+// Extract JSON from <pre> tag (common for API responses)
+jsonText=jsonMatch?jsonMatch[1].trim():await page.evaluate((()=>{
+// Try to find JSON in the page
+// eslint-disable-next-line no-undef
+const preElement=document.querySelector("pre");return preElement?preElement.textContent:document.body.textContent;// If no pre element, return the whole body text
+// eslint-disable-next-line no-undef
+}));try{return JSON.parse(jsonText)}catch(parseError){throw new Error(`Invalid JSON response: ${parseError.message}`)}}finally{browser&&await browser.close()}}
 /**
    * Get API arguments.
    * This is internal method.
@@ -589,21 +626,49 @@ return{host:Array.isArray(hostConfig)?this.selectHost(hostConfig,hostConfig[0]):
    */async getRandomBook(){let{host:host,apiPath:apiPath}=this.getAPIArgs("api","randomBookRedirect");try{await this.request({host:host,path:apiPath()});// Will always throw
 }catch(error){if(!(error instanceof APIError))throw error;const response=error.httpResponse;if(!response||302!==response.statusCode)throw error;const id=+(/\d+/.exec(response.headers.location)||{})[0];if(isNaN(id))throw APIError.absorb(new Error("Bad redirect"),response);return await this.getBook(id)}}
 /**
+   * Detect the actual cover filename extension for nhentai's double extension format.
+   * @param {Image} image Cover image.
+   * @returns {string} The actual extension to use in the URL.
+   * @private
+   */detectCoverExtension(image){const reportedExtension=image.type.extension;// Handle WebP cases - both simple and double extension formats
+if("webp"===reportedExtension){// Media IDs above ~3000000 seem to use cover.webp.webp format
+// This is a heuristic that may need adjustment based on more data
+return image.book.media>3e6?"webp.webp":"webp";// Default to simple webp for older uploads
+}// For non-webp extensions, nhentai often serves double extensions
+// The pattern is: cover.{original_extension}.webp
+// We need to detect what the original extension should be
+// Map API type codes to likely intermediate extensions
+const intermediateExt={jpg:"jpg",
+// API reports 'j' -> likely cover.jpg.webp
+jpeg:"jpg",
+// API reports 'jpeg' -> likely cover.jpg.webp
+png:"png",
+// API reports 'p' -> likely cover.png.webp
+gif:"gif"}[reportedExtension];return intermediateExt?`${intermediateExt}.webp`:reportedExtension;// Fallback to reported extension if we can't map it
+}
+/**
    * Get image URL.
    * @param {Image} image Image.
    * @returns {string} Image URL.
-   */getImageURL(image){if(image instanceof Image){let{host:host,apiPath:apiPath}=image.isCover?this.getAPIArgs("thumbs","bookCover"):this.getAPIArgs("images","bookPage"),
-// Handle the case where nhentai serves WebP files with original extension names
-// E.g., cover.jpg.webp instead of cover.jpg
-extension=image.type.extension;// For covers, if the original extension is not webp, try webp format
-// This handles cases where API returns 'j' but file is actually cover.jpg.webp
-if(image.isCover&&"webp"!==extension){// Return WebP URL - the consumer can handle fallback if needed
-return`http${this.ssl?"s":""}://${host}`+apiPath(image.book.media,`${extension}.webp`)}return`http${this.ssl?"s":""}://${host}`+(image.isCover?apiPath(image.book.media,extension):apiPath(image.book.media,image.id,extension))}throw new Error("image must be Image instance.")}
+   */getImageURL(image){if(image instanceof Image){let extension,{host:host,apiPath:apiPath}=image.isCover?this.getAPIArgs("thumbs","bookCover"):this.getAPIArgs("images","bookPage");// Handle cover images with potential double extensions
+return extension=image.isCover?this.detectCoverExtension(image):image.type.extension,`http${this.ssl?"s":""}://${host}`+(image.isCover?apiPath(image.book.media,extension):apiPath(image.book.media,image.id,extension))}throw new Error("image must be Image instance.")}
 /**
-   * Get image URL with original extension (fallback for when WebP fails).
+   * Get image URL with original extension (fallback for when double extension fails).
    * @param {Image} image Image.
    * @returns {string} Image URL with original extension.
-   */getImageURLOriginal(image){if(image instanceof Image){let{host:host,apiPath:apiPath}=image.isCover?this.getAPIArgs("thumbs","bookCover"):this.getAPIArgs("images","bookPage");return`http${this.ssl?"s":""}://${host}`+(image.isCover?apiPath(image.book.media,image.type.extension):apiPath(image.book.media,image.id,image.type.extension))}throw new Error("image must be Image instance.")}
+   */getImageURLOriginal(image){if(image instanceof Image){let{host:host,apiPath:apiPath}=image.isCover?this.getAPIArgs("thumbs","bookCover"):this.getAPIArgs("images","bookPage");// Always use the original extension reported by the API
+return`http${this.ssl?"s":""}://${host}`+(image.isCover?apiPath(image.book.media,image.type.extension):apiPath(image.book.media,image.id,image.type.extension))}throw new Error("image must be Image instance.")}
+/**
+   * Get all possible cover image URL variants for testing.
+   * @param {Image} image Cover image.
+   * @returns {string[]} Array of possible URLs to try.
+   */getCoverURLVariants(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");let{host:host,apiPath:apiPath}=this.getAPIArgs("thumbs","bookCover"),baseURL=`http${this.ssl?"s":""}://${host}`,reportedExt=image.type.extension,variants=[],
+// Add the smart detection URL (our primary method)
+smartExt=this.detectCoverExtension(image);// Remove duplicates
+return variants.push(baseURL+apiPath(image.book.media,smartExt)),// Add original extension URL
+variants.push(baseURL+apiPath(image.book.media,reportedExt)),// For WebP, add both simple and double variants
+"webp"===reportedExt&&(variants.push(baseURL+apiPath(image.book.media,"webp")),variants.push(baseURL+apiPath(image.book.media,"webp.webp"))),// For non-WebP, add the double extension variant
+"webp"!==reportedExt&&variants.push(baseURL+apiPath(image.book.media,`${reportedExt}.webp`)),[...new Set(variants)]}
 /**
    * Get image thumbnail URL.
    * @param {Image} image Image.

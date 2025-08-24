@@ -21,10 +21,12 @@ import { Agent as SSLAgent, } from 'https';
  * Common nHentai options object.
  * @global
  * @typedef {object} nHentaiOptions
- * @property {?nHentaiHosts} hosts   Hosts.
- * @property {?boolean}      ssl     Prefer HTTPS over HTTP.
- * @property {?httpAgent}    agent   HTTP(S) agent.
- * @property {?string}       cookies Cookies string in format 'cookie1=value1;cookie2=value2;...'
+ * @property {?nHentaiHosts} hosts         Hosts.
+ * @property {?boolean}      ssl           Prefer HTTPS over HTTP.
+ * @property {?httpAgent}    agent         HTTP(S) agent.
+ * @property {?string}       cookies       Cookies string in format 'cookie1=value1;cookie2=value2;...'
+ * @property {?boolean}      usePuppeteer  Use Puppeteer with stealth plugin instead of native HTTP requests.
+ * @property {?string[]}     browserArgs   Additional arguments to pass to Puppeteer browser launch.
  */
 
 /**
@@ -46,9 +48,11 @@ function processOptions({
 			't3.nhentai.net',
 		],
 	} = {},
-	ssl     = true,
-	agent   = null,
-	cookies = null,
+	ssl          = true,
+	agent        = null,
+	cookies      = null,
+	usePuppeteer = false,
+	browserArgs  = [],
 } = {}) {
 	if (!agent)
 		agent = ssl
@@ -75,6 +79,8 @@ function processOptions({
 		ssl,
 		agent,
 		cookies,
+		usePuppeteer,
+		browserArgs,
 	};
 }
 

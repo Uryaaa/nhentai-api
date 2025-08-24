@@ -54,6 +54,16 @@ declare class API {
      */
     cookies: string | null;
     /**
+     * Use Puppeteer with stealth plugin instead of native HTTP requests.
+     * @type {?boolean}
+     */
+    usePuppeteer: boolean | null;
+    /**
+     * Additional arguments to pass to Puppeteer browser launch.
+     * @type {?string[]}
+     */
+    browserArgs: string[] | null;
+    /**
      * Get http(s) module depending on `options.ssl`.
      * @type {https|http}
      */
@@ -77,6 +87,15 @@ declare class API {
         host: string;
         path: string;
     }): Promise<object>;
+    /**
+     * JSON get request using Puppeteer with stealth plugin.
+     * @param {object} options      HTTP(S) request options.
+     * @param {string} options.host Host.
+     * @param {string} options.path Path.
+     * @returns {Promise<object>} Parsed JSON.
+     * @private
+     */
+    private requestWithPuppeteer;
     /**
      * Get API arguments.
      * This is internal method.
@@ -135,11 +154,30 @@ declare class API {
      */
     getRandomBook(): Promise<Book>;
     /**
+     * Detect the actual cover filename extension for nhentai's double extension format.
+     * @param {Image} image Cover image.
+     * @returns {string} The actual extension to use in the URL.
+     * @private
+     */
+    private detectCoverExtension;
+    /**
      * Get image URL.
      * @param {Image} image Image.
      * @returns {string} Image URL.
      */
     getImageURL(image: Image): string;
+    /**
+     * Get image URL with original extension (fallback for when double extension fails).
+     * @param {Image} image Image.
+     * @returns {string} Image URL with original extension.
+     */
+    getImageURLOriginal(image: Image): string;
+    /**
+     * Get all possible cover image URL variants for testing.
+     * @param {Image} image Cover image.
+     * @returns {string[]} Array of possible URLs to try.
+     */
+    getCoverURLVariants(image: Image): string[];
     /**
      * Get image thumbnail URL.
      * @param {Image} image Image.

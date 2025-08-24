@@ -99,19 +99,23 @@ export default {
 	input : joinPath(srcDir, 'index.js'),
 	output: [
 		{
-			file     : joinPath(distDir, 'cjs', 'bundle.cjs'),
-			format   : 'cjs',
-			sourcemap: true,
+			file                : joinPath(distDir, 'cjs', 'bundle.cjs'),
+			format              : 'cjs',
+			sourcemap           : true,
+			inlineDynamicImports: true,
 		},
 		{
-			file     : joinPath(distDir, 'esm', 'bundle.mjs'),
-			format   : 'es',
-			sourcemap: true,
+			file                : joinPath(distDir, 'esm', 'bundle.mjs'),
+			format              : 'es',
+			sourcemap           : true,
+			inlineDynamicImports: true,
 		},
 	],
 	plugins,
 	external: [
 		'http',
 		'https',
+		'puppeteer-extra',
+		'puppeteer-extra-plugin-stealth',
 	],
 };

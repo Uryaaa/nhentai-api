@@ -33,6 +33,28 @@ describe('API', () => {
 
 		});
 
+		it('should create API instance with Puppeteer options', () => {
+
+			let api = new API({
+				usePuppeteer: true,
+				browserArgs : [ '--no-sandbox', '--disable-setuid-sandbox', ],
+			});
+
+			assert.ok(api);
+			assert.strictEqual(api.usePuppeteer, true);
+			assert.deepStrictEqual(api.browserArgs, [ '--no-sandbox', '--disable-setuid-sandbox', ]);
+
+			api = new API({
+				usePuppeteer: false,
+				browserArgs : [],
+			});
+
+			assert.ok(api);
+			assert.strictEqual(api.usePuppeteer, false);
+			assert.deepStrictEqual(api.browserArgs, []);
+
+		});
+
 		it('should create API instance with multiple hosts', () => {
 
 			let api = new API({

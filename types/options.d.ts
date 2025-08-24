@@ -41,6 +41,14 @@ export type nHentaiOptions = {
      * Cookies string in format 'cookie1=value1;cookie2=value2;...'
      */
     cookies: string | null;
+    /**
+     * Use Puppeteer with stealth plugin instead of native HTTP requests.
+     */
+    usePuppeteer: boolean | null;
+    /**
+     * Additional arguments to pass to Puppeteer browser launch.
+     */
+    browserArgs: string[] | null;
 };
 /**
  * Agent-like object or Agent class or it's instance.
@@ -59,16 +67,18 @@ export type nHentaiOptions = {
  * Common nHentai options object.
  * @global
  * @typedef {object} nHentaiOptions
- * @property {?nHentaiHosts} hosts   Hosts.
- * @property {?boolean}      ssl     Prefer HTTPS over HTTP.
- * @property {?httpAgent}    agent   HTTP(S) agent.
- * @property {?string}       cookies Cookies string in format 'cookie1=value1;cookie2=value2;...'
+ * @property {?nHentaiHosts} hosts         Hosts.
+ * @property {?boolean}      ssl           Prefer HTTPS over HTTP.
+ * @property {?httpAgent}    agent         HTTP(S) agent.
+ * @property {?string}       cookies       Cookies string in format 'cookie1=value1;cookie2=value2;...'
+ * @property {?boolean}      usePuppeteer  Use Puppeteer with stealth plugin instead of native HTTP requests.
+ * @property {?string[]}     browserArgs   Additional arguments to pass to Puppeteer browser launch.
  */
 /**
  * Applies provided options on top of defaults.
  * @param {?nHentaiOptions} [options={}] Options to apply.
  * @returns {nHentaiOptions} Unified options.
  */
-declare function processOptions({ hosts: { api, images, thumbs, }, ssl, agent, cookies, }?: nHentaiOptions | null): nHentaiOptions;
+declare function processOptions({ hosts: { api, images, thumbs, }, ssl, agent, cookies, usePuppeteer, browserArgs, }?: nHentaiOptions | null): nHentaiOptions;
 import { Agent } from "http";
 import { Agent as SSLAgent } from "https";

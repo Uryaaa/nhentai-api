@@ -14,6 +14,7 @@ Node.JS module for handling nhentai.net API.
 * **Multiple host support** for load balancing (i1, i2, i3 for images; t1, t2, t3 for thumbnails).
 * **WebP image format support** alongside JPEG, PNG, and GIF.
 * **Cookie support** for authenticated requests.
+* **Puppeteer support** with stealth plugin for browser-based requests (optional).
 
 ## Install
 
@@ -27,6 +28,20 @@ Install via npm:
 
 ```
 npm i nhentai-api
+```
+
+### Optional: Puppeteer Support
+
+For browser-based requests using Puppeteer with stealth plugin (useful for bypassing certain restrictions):
+
+```
+npm i puppeteer-extra puppeteer-extra-plugin-stealth
+```
+
+or with yarn:
+
+```
+yarn add puppeteer-extra puppeteer-extra-plugin-stealth
 ```
 
 ## Docs
@@ -81,6 +96,13 @@ const api = new API({
 		thumbs: ['t1.nhentai.net', 't2.nhentai.net', 't3.nhentai.net'],
 	},
 	cookies: 'sessionid=abc123;csrftoken=def456'
+});
+
+// With Puppeteer (requires puppeteer-extra and puppeteer-extra-plugin-stealth)
+const api = new API({
+	usePuppeteer: true,
+	browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'], // Optional browser arguments
+	cookies: 'sessionid=abc123;csrftoken=def456' // Cookies still work with Puppeteer
 });
 ```
 

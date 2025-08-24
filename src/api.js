@@ -163,6 +163,18 @@ class API {
 	cookies;
 
 	/**
+	 * Use Puppeteer with stealth plugin instead of native HTTP requests.
+	 * @type {?boolean}
+	 */
+	usePuppeteer;
+
+	/**
+	 * Additional arguments to pass to Puppeteer browser launch.
+	 * @type {?string[]}
+	 */
+	browserArgs;
+
+	/**
 	 * Applies provided options on top of defaults.
 	 * @param {?nHentaiOptions} [options={}] Options to apply.
 	 */
@@ -207,6 +219,12 @@ class API {
 	 * @returns {Promise<object>} Parsed JSON.
 	 */
 	request(options) {
+		// Use Puppeteer if enabled
+		if (this.usePuppeteer) {
+			return this.requestWithPuppeteer(options);
+		}
+
+		// Use native HTTP requests
 		let {
 			net,
 			agent,
@@ -258,6 +276,103 @@ class API {
 				});
 			}).on('error', error => reject(APIError.absorb(error)));
 		});
+	}
+
+	/**
+	 * JSON get request using Puppeteer with stealth plugin.
+	 * @param {object} options      HTTP(S) request options.
+	 * @param {string} options.host Host.
+	 * @param {string} options.path Path.
+	 * @returns {Promise<object>} Parsed JSON.
+	 * @private
+	 */
+	async requestWithPuppeteer(options) {
+		let puppeteer, StealthPlugin;
+
+		try {
+			// Dynamic import to avoid requiring puppeteer when not needed
+			puppeteer = await import('puppeteer-extra');
+			StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+		} catch (error) {
+			throw new Error('Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth');
+		}
+
+		// Use stealth plugin
+		puppeteer.default.use(StealthPlugin());
+
+		const url = `http${this.ssl ? 's' : ''}://${options.host}${options.path}`;
+		let browser;
+
+		try {
+			// Launch browser with provided arguments
+			browser = await puppeteer.default.launch({
+				headless: 'new',
+				args    : this.browserArgs || [],
+			});
+
+			const page = await browser.newPage();
+
+			// Set user agent
+			await page.setUserAgent(`nhentai-api-client/${version} Node.js/${process.versions.node}`);
+
+			// Set cookies if provided
+			if (this.cookies) {
+				const cookieStrings = this.cookies.split(';'),
+					cookies = cookieStrings.map(cookieStr => {
+						const [ name, value, ] = cookieStr.trim().split('=');
+						return {
+							name  : name.trim(),
+							value : value ? value.trim() : '',
+							domain: options.host,
+						};
+					});
+				await page.setCookie(...cookies);
+			}
+
+			// Navigate to the URL
+			const response = await page.goto(url, {
+				waitUntil: 'networkidle0',
+				timeout  : 30000,
+			});
+
+			if (!response.ok()) {
+				throw new Error(`Request failed with status code ${response.status()}`);
+			}
+
+			// Get the response text
+			const content = await page.content(),
+				jsonMatch = content.match(/<pre[^>]*>(.*?)<\/pre>/s);
+			let jsonText;
+
+			if (jsonMatch) {
+				// Extract JSON from <pre> tag (common for API responses)
+				jsonText = jsonMatch[1].trim();
+			} else {
+				// Try to get JSON from page.evaluate
+				jsonText = await page.evaluate(() => {
+					// Try to find JSON in the page
+					// eslint-disable-next-line no-undef
+					const preElement = document.querySelector('pre');
+					if (preElement) {
+						return preElement.textContent;
+					}
+					// If no pre element, return the whole body text
+					// eslint-disable-next-line no-undef
+					return document.body.textContent;
+				});
+			}
+
+			try {
+				return JSON.parse(jsonText);
+			} catch (parseError) {
+				throw new Error(`Invalid JSON response: ${parseError.message}`);
+			}
+
+		} finally {
+			if (browser) {
+				await browser.close();
+			}
+		}
 	}
 
 	/**
@@ -430,6 +545,56 @@ class API {
 	}
 
 	/**
+	 * Detect the actual cover filename extension for nhentai's double extension format.
+	 * @param {Image} image Cover image.
+	 * @returns {string} The actual extension to use in the URL.
+	 * @private
+	 */
+	detectCoverExtension(image) {
+		const reportedExtension = image.type.extension;
+
+		// Handle WebP cases - both simple and double extension formats
+		if (reportedExtension === 'webp') {
+			// Some WebP files also have double extensions like cover.webp.webp
+			// We need to detect this based on media ID or other patterns
+
+			// For now, we'll try the double WebP format for certain media ID ranges
+			// This is based on observation that newer uploads tend to have cover.webp.webp
+			const mediaId = image.book.media;
+
+			// Media IDs above ~3000000 seem to use cover.webp.webp format
+			// This is a heuristic that may need adjustment based on more data
+			if (mediaId > 3000000) {
+				return 'webp.webp';
+			}
+
+			// Default to simple webp for older uploads
+			return 'webp';
+		}
+
+		// For non-webp extensions, nhentai often serves double extensions
+		// The pattern is: cover.{original_extension}.webp
+		// We need to detect what the original extension should be
+
+		// Map API type codes to likely intermediate extensions
+		const intermediateExtensionMap = {
+				'jpg' : 'jpg',    // API reports 'j' -> likely cover.jpg.webp
+				'jpeg': 'jpg',    // API reports 'jpeg' -> likely cover.jpg.webp
+				'png' : 'png',    // API reports 'p' -> likely cover.png.webp
+				'gif' : 'gif',    // API reports 'g' -> likely cover.gif.webp
+			},
+			intermediateExt = intermediateExtensionMap[reportedExtension];
+
+		if (intermediateExt) {
+			// Return double extension format: original.webp
+			return `${intermediateExt}.webp`;
+		}
+
+		// Fallback to reported extension if we can't map it
+		return reportedExtension;
+	}
+
+	/**
 	 * Get image URL.
 	 * @param {Image} image Image.
 	 * @returns {string} Image URL.
@@ -437,14 +602,79 @@ class API {
 	getImageURL(image) {
 		if (image instanceof Image) {
 			let { host, apiPath, } = image.isCover
+					? this.getAPIArgs('thumbs', 'bookCover')
+					: this.getAPIArgs('images', 'bookPage'),
+				extension;
+
+			// Handle cover images with potential double extensions
+			if (image.isCover) {
+				extension = this.detectCoverExtension(image);
+			} else {
+				// Regular pages use simple extensions
+				extension = image.type.extension;
+			}
+
+			return `http${this.ssl ? 's' : ''}://${host}` + (image.isCover
+				? apiPath(image.book.media, extension)
+				: apiPath(image.book.media, image.id, extension));
+		}
+		throw new Error('image must be Image instance.');
+	}
+
+	/**
+	 * Get image URL with original extension (fallback for when double extension fails).
+	 * @param {Image} image Image.
+	 * @returns {string} Image URL with original extension.
+	 */
+	getImageURLOriginal(image) {
+		if (image instanceof Image) {
+			let { host, apiPath, } = image.isCover
 				? this.getAPIArgs('thumbs', 'bookCover')
 				: this.getAPIArgs('images', 'bookPage');
 
+			// Always use the original extension reported by the API
 			return `http${this.ssl ? 's' : ''}://${host}` + (image.isCover
 				? apiPath(image.book.media, image.type.extension)
 				: apiPath(image.book.media, image.id, image.type.extension));
 		}
 		throw new Error('image must be Image instance.');
+	}
+
+	/**
+	 * Get all possible cover image URL variants for testing.
+	 * @param {Image} image Cover image.
+	 * @returns {string[]} Array of possible URLs to try.
+	 */
+	getCoverURLVariants(image) {
+		if (!(image instanceof Image) || !image.isCover) {
+			throw new Error('image must be a cover Image instance.');
+		}
+
+		let { host, apiPath, } = this.getAPIArgs('thumbs', 'bookCover'),
+			baseURL = `http${this.ssl ? 's' : ''}://${host}`,
+			reportedExt = image.type.extension,
+			variants = [],
+			// Add the smart detection URL (our primary method)
+			smartExt = this.detectCoverExtension(image);
+
+		variants.push(baseURL + apiPath(image.book.media, smartExt));
+
+		// Add original extension URL
+		variants.push(baseURL + apiPath(image.book.media, reportedExt));
+
+		// For WebP, add both simple and double variants
+		if (reportedExt === 'webp') {
+			variants.push(baseURL + apiPath(image.book.media, 'webp'));
+			variants.push(baseURL + apiPath(image.book.media, 'webp.webp'));
+		}
+
+		// For non-WebP, add the double extension variant
+		if (reportedExt !== 'webp') {
+			variants.push(baseURL + apiPath(image.book.media, `${reportedExt}.webp`));
+		}
+
+		// Remove duplicates
+		return [ ...new Set(variants), ];
 	}
 
 	/**
