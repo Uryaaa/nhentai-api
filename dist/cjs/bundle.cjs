@@ -563,8 +563,21 @@ puppeteer.default.use(StealthPlugin());const url=`http${this.ssl?"s":""}://${opt
 // Launch browser with provided arguments
 browser=await puppeteer.default.launch({headless:"new",args:this.browserArgs||[]});const page=await browser.newPage();// Set user agent
 // Set cookies if provided
-if(await page.setUserAgent(`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Navigate to the URL
-const response=await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});if(!response.ok())throw new Error(`Request failed with status code ${response.status()}`);// Get the response text
+if(await page.setUserAgent(`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Check if this is a redirect endpoint (like /random/)
+if(options.path.includes("/random")){
+// For redirect endpoints, we need to intercept the redirect response
+let redirectResponse=null;page.on("response",(response=>{302===response.status()&&response.url()===url&&(redirectResponse=response)})),// Navigate without following redirects
+await page.setRequestInterception(!0),page.on("request",(request=>{request.continue()}));try{await page.goto(url,{waitUntil:"networkidle0",timeout:3e4})}catch(error){// Expected for redirect endpoints
+}if(redirectResponse){
+// Simulate the error that the traditional method expects
+const mockError=new Error(`Request failed with status code ${redirectResponse.status()}`);throw mockError.httpResponse={statusCode:redirectResponse.status(),headers:{location:redirectResponse.headers().location}},APIError.absorb(mockError,mockError.httpResponse)}throw new Error("Expected redirect response not found")}{
+// Set request headers to get JSON response for API endpoints
+await page.setExtraHTTPHeaders({Accept:"application/json, text/plain, */*","Content-Type":"application/json"});// Navigate to the URL and get the response
+const response=await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});if(!response.ok())throw new Error(`Request failed with status code ${response.status()}`);// Get the response text directly from the response
+const responseText=await response.text();if((response.headers()["content-type"]||"").includes("application/json"))
+// Direct JSON response
+try{return JSON.parse(responseText)}catch(parseError){throw new Error(`Invalid JSON response: ${parseError.message}`)}else{
+// HTML response - try to extract JSON from page content
 const jsonMatch=(await page.content()).match(/<pre[^>]*>(.*?)<\/pre>/s);let jsonText;
 // Extract JSON from <pre> tag (common for API responses)
 jsonText=jsonMatch?jsonMatch[1].trim():await page.evaluate((()=>{
@@ -572,7 +585,7 @@ jsonText=jsonMatch?jsonMatch[1].trim():await page.evaluate((()=>{
 // eslint-disable-next-line no-undef
 const preElement=document.querySelector("pre");return preElement?preElement.textContent:document.body.textContent;// If no pre element, return the whole body text
 // eslint-disable-next-line no-undef
-}));try{return JSON.parse(jsonText)}catch(parseError){throw new Error(`Invalid JSON response: ${parseError.message}`)}}finally{browser&&await browser.close()}}
+}));try{return JSON.parse(jsonText)}catch(parseError){throw new Error(`Invalid JSON response: ${parseError.message}. Response content: ${jsonText?.substring(0,200)}...`)}}}}finally{browser&&await browser.close()}}
 /**
    * Get API arguments.
    * This is internal method.

@@ -329,43 +329,106 @@ class API {
 				await page.setCookie(...cookies);
 			}
 
-			// Navigate to the URL
-			const response = await page.goto(url, {
-				waitUntil: 'networkidle0',
-				timeout  : 30000,
-			});
+			// Check if this is a redirect endpoint (like /random/)
+			const isRedirectEndpoint = options.path.includes('/random');
 
-			if (!response.ok()) {
-				throw new Error(`Request failed with status code ${response.status()}`);
-			}
+			if (isRedirectEndpoint) {
+				// For redirect endpoints, we need to intercept the redirect response
+				let redirectResponse = null;
 
-			// Get the response text
-			const content = await page.content(),
-				jsonMatch = content.match(/<pre[^>]*>(.*?)<\/pre>/s);
-			let jsonText;
-
-			if (jsonMatch) {
-				// Extract JSON from <pre> tag (common for API responses)
-				jsonText = jsonMatch[1].trim();
-			} else {
-				// Try to get JSON from page.evaluate
-				jsonText = await page.evaluate(() => {
-					// Try to find JSON in the page
-					// eslint-disable-next-line no-undef
-					const preElement = document.querySelector('pre');
-					if (preElement) {
-						return preElement.textContent;
+				page.on('response', response => {
+					if (response.status() === 302 && response.url() === url) {
+						redirectResponse = response;
 					}
-					// If no pre element, return the whole body text
-					// eslint-disable-next-line no-undef
-					return document.body.textContent;
 				});
-			}
 
-			try {
-				return JSON.parse(jsonText);
-			} catch (parseError) {
-				throw new Error(`Invalid JSON response: ${parseError.message}`);
+				// Navigate without following redirects
+				await page.setRequestInterception(true);
+				page.on('request', request => {
+					request.continue();
+				});
+
+				try {
+					await page.goto(url, {
+						waitUntil: 'networkidle0',
+						timeout  : 30000,
+					});
+				} catch (error) {
+					// Expected for redirect endpoints
+				}
+
+				if (redirectResponse) {
+					// Simulate the error that the traditional method expects
+					const mockError = new Error(`Request failed with status code ${redirectResponse.status()}`);
+					mockError.httpResponse = {
+						statusCode: redirectResponse.status(),
+						headers   : {
+							location: redirectResponse.headers().location,
+						},
+					};
+					throw APIError.absorb(mockError, mockError.httpResponse);
+				} else {
+					throw new Error('Expected redirect response not found');
+				}
+			} else {
+				// Set request headers to get JSON response for API endpoints
+				await page.setExtraHTTPHeaders({
+					'Accept'      : 'application/json, text/plain, */*',
+					'Content-Type': 'application/json',
+				});
+
+				// Navigate to the URL and get the response
+				const response = await page.goto(url, {
+					waitUntil: 'networkidle0',
+					timeout  : 30000,
+				});
+
+				if (!response.ok()) {
+					throw new Error(`Request failed with status code ${response.status()}`);
+				}
+
+				// Get the response text directly from the response
+				const responseText = await response.text(),
+					// Check if the response is JSON by looking at content-type or trying to parse
+					contentType = response.headers()['content-type'] || '';
+
+				if (contentType.includes('application/json')) {
+					// Direct JSON response
+					try {
+						return JSON.parse(responseText);
+					} catch (parseError) {
+						throw new Error(`Invalid JSON response: ${parseError.message}`);
+					}
+				} else {
+					// HTML response - try to extract JSON from page content
+					const content = await page.content(),
+						jsonMatch = content.match(/<pre[^>]*>(.*?)<\/pre>/s);
+					let jsonText;
+
+					if (jsonMatch) {
+						// Extract JSON from <pre> tag (common for API responses)
+						jsonText = jsonMatch[1].trim();
+					} else {
+						// Try to get JSON from page.evaluate
+						jsonText = await page.evaluate(() => {
+							// Try to find JSON in the page
+							// eslint-disable-next-line no-undef
+							const preElement = document.querySelector('pre');
+							if (preElement) {
+								return preElement.textContent;
+							}
+							// If no pre element, return the whole body text
+							// eslint-disable-next-line no-undef
+							return document.body.textContent;
+						});
+					}
+
+					try {
+						return JSON.parse(jsonText);
+					} catch (parseError) {
+						throw new Error(`Invalid JSON response: ${parseError.message}. Response content: ${jsonText?.substring(0, 200)}...`);
+					}
+				}
 			}
 
 		} finally {

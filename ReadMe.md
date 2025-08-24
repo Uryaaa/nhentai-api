@@ -104,6 +104,9 @@ const api = new API({
 	browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'], // Optional browser arguments
 	cookies: 'sessionid=abc123;csrftoken=def456' // Cookies still work with Puppeteer
 });
+
+// The Puppeteer implementation automatically handles JSON parsing from API responses
+// and includes proper error handling for different response formats
 ```
 
 #### Get the book
