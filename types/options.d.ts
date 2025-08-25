@@ -49,6 +49,10 @@ export type nHentaiOptions = {
      * Additional arguments to pass to Puppeteer browser launch.
      */
     browserArgs: string[] | null;
+    /**
+     * Custom function to launch Puppeteer browser. If provided, this will be used instead of the default launch configuration.
+     */
+    puppeteerLaunch: Function | null;
 };
 /**
  * Agent-like object or Agent class or it's instance.
@@ -73,12 +77,13 @@ export type nHentaiOptions = {
  * @property {?string}       cookies       Cookies string in format 'cookie1=value1;cookie2=value2;...'
  * @property {?boolean}      usePuppeteer  Use Puppeteer with stealth plugin instead of native HTTP requests.
  * @property {?string[]}     browserArgs   Additional arguments to pass to Puppeteer browser launch.
+ * @property {?Function}     puppeteerLaunch Custom function to launch Puppeteer browser. If provided, this will be used instead of the default launch configuration.
  */
 /**
  * Applies provided options on top of defaults.
  * @param {?nHentaiOptions} [options={}] Options to apply.
  * @returns {nHentaiOptions} Unified options.
  */
-declare function processOptions({ hosts: { api, images, thumbs, }, ssl, agent, cookies, usePuppeteer, browserArgs, }?: nHentaiOptions | null): nHentaiOptions;
+declare function processOptions({ hosts: { api, images, thumbs, }, ssl, agent, cookies, usePuppeteer, browserArgs, puppeteerLaunch, }?: nHentaiOptions | null): nHentaiOptions;
 import { Agent } from "http";
 import { Agent as SSLAgent } from "https";

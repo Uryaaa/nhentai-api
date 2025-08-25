@@ -64,6 +64,11 @@ declare class API {
      */
     browserArgs: string[] | null;
     /**
+     * Custom function to launch Puppeteer browser.
+     * @type {?Function}
+     */
+    puppeteerLaunch: Function | null;
+    /**
      * Get http(s) module depending on `options.ssl`.
      * @type {https|http}
      */

@@ -27,6 +27,7 @@ import { Agent as SSLAgent, } from 'https';
  * @property {?string}       cookies       Cookies string in format 'cookie1=value1;cookie2=value2;...'
  * @property {?boolean}      usePuppeteer  Use Puppeteer with stealth plugin instead of native HTTP requests.
  * @property {?string[]}     browserArgs   Additional arguments to pass to Puppeteer browser launch.
+ * @property {?Function}     puppeteerLaunch Custom function to launch Puppeteer browser. If provided, this will be used instead of the default launch configuration.
  */
 
 /**
@@ -48,11 +49,12 @@ function processOptions({
 			't3.nhentai.net',
 		],
 	} = {},
-	ssl          = true,
-	agent        = null,
-	cookies      = null,
-	usePuppeteer = false,
-	browserArgs  = [],
+	ssl             = true,
+	agent           = null,
+	cookies         = null,
+	usePuppeteer    = false,
+	browserArgs     = [],
+	puppeteerLaunch = null,
 } = {}) {
 	if (!agent)
 		agent = ssl
@@ -81,6 +83,7 @@ function processOptions({
 		cookies,
 		usePuppeteer,
 		browserArgs,
+		puppeteerLaunch,
 	};
 }
 
