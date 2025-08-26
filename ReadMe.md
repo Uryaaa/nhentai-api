@@ -44,20 +44,6 @@ or with yarn:
 yarn add puppeteer-extra puppeteer-extra-plugin-stealth
 ```
 
-### Serverless Support
-
-For serverless environments (AWS Lambda, Vercel, etc.), you'll also need:
-
-```
-npm i @sparticuz/chromium
-```
-
-or with yarn:
-
-```
-yarn add @sparticuz/chromium
-```
-
 ## Docs
 
 [Read the docs on GitHub pages.](https://zekfad.github.io/nhentai-api/)
@@ -117,19 +103,6 @@ const api = new API({
 	usePuppeteer: true,
 	browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'], // Optional browser arguments
 	cookies: 'sessionid=abc123;csrftoken=def456' // Cookies still work with Puppeteer
-});
-
-// With custom Puppeteer launch function (useful for serverless environments)
-const api = new API({
-	usePuppeteer: true,
-	puppeteerLaunch: async () => {
-		return await puppeteer.launch({
-			args: chromium.args,
-			defaultViewport: chromium.defaultViewport,
-			executablePath: await chromium.executablePath(),
-			headless: chromium.headless,
-		});
-	},
 });
 
 // The Puppeteer implementation automatically handles JSON parsing from API responses
@@ -304,104 +277,3 @@ book.artists.toNames().join(', ');
 // or
 book.getTagsWith({ type: TagTypes.Artist, }).join(', ');
 ```
-
-## Serverless Usage
-
-The library supports serverless environments like AWS Lambda, Vercel, and others through custom Puppeteer launch functions. This is particularly useful when you need to use a specific Chrome binary or configuration for your serverless platform.
-
-### Basic Serverless Setup
-
-```js
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import chromium from '@sparticuz/chromium';
-import { API } from 'nhentai-api';
-
-// Use stealth plugin
-puppeteer.use(StealthPlugin());
-
-const api = new API({
-  usePuppeteer: true,
-  puppeteerLaunch: async () => {
-    return await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
-  },
-});
-```
-
-### Advanced Serverless Configuration
-
-```js
-const api = new API({
-  usePuppeteer: true,
-  puppeteerLaunch: async () => {
-    // Detect serverless environment
-    const isAWSLambda = process.env.AWS_LAMBDA_FUNCTION_NAME;
-    const isVercel = process.env.VERCEL;
-
-    let launchOptions = {
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    };
-
-    // Environment-specific optimizations
-    if (isAWSLambda) {
-      launchOptions.args.push('--single-process');
-      launchOptions.args.push('--no-zygote');
-    }
-
-    if (isVercel) {
-      launchOptions.args.push('--disable-dev-shm-usage');
-    }
-
-    return await puppeteer.launch(launchOptions);
-  },
-});
-```
-
-### Error Handling and Retries
-
-```js
-const api = new API({
-  usePuppeteer: true,
-  puppeteerLaunch: async () => {
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      try {
-        return await puppeteer.launch({
-          args: chromium.args,
-          defaultViewport: chromium.defaultViewport,
-          executablePath: await chromium.executablePath(),
-          headless: chromium.headless,
-        });
-      } catch (error) {
-        attempts++;
-        console.warn(`Puppeteer launch attempt ${attempts} failed:`, error.message);
-
-        if (attempts >= maxAttempts) {
-          throw error;
-        }
-
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
-      }
-    }
-  },
-});
-```
-
-The `puppeteerLaunch` function gives you complete control over how Puppeteer is launched, allowing you to:
-
-- Use custom Chrome binaries (like `@sparticuz/chromium` for AWS Lambda)
-- Add environment-specific arguments and optimizations
-- Implement retry logic and error handling
-- Configure different settings for different deployment environments
-- Use different Puppeteer versions or configurations

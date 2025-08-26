@@ -110,26 +110,5 @@ describe('API', () => {
 
 		});
 
-		it('should create API instance with custom puppeteerLaunch function', () => {
-
-			const mockLaunchFunction = () => {
-				return {
-					newPage: () => Promise.resolve({}),
-					close  : () => Promise.resolve(),
-				};
-			};
-
-			let api = new API({
-				usePuppeteer   : true,
-				puppeteerLaunch: mockLaunchFunction,
-			});
-
-			assert.ok(api);
-			assert.strictEqual(api.usePuppeteer, true);
-			assert.strictEqual(typeof api.puppeteerLaunch, 'function');
-			assert.strictEqual(api.puppeteerLaunch, mockLaunchFunction);
-
-		});
-
 	});
 });

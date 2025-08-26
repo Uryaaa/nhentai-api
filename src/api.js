@@ -177,12 +177,6 @@ class API {
 	browserArgs;
 
 	/**
-	 * Custom function to launch Puppeteer browser.
-	 * @type {?Function}
-	 */
-	puppeteerLaunch;
-
-	/**
 	 * Applies provided options on top of defaults.
 	 * @param {?nHentaiOptions} [options={}] Options to apply.
 	 */
@@ -312,19 +306,13 @@ class API {
 		let browser;
 
 		try {
-			// Launch browser with custom function or default configuration
-			if (this.puppeteerLaunch && typeof this.puppeteerLaunch === 'function') {
-				// Use custom launch function
-				browser = await this.puppeteerLaunch();
-			} else {
-				// Use default launch configuration
-				browser = await puppeteer.default.launch({
-					args          	: chromium.args.concat(this.browserArgs || []),
-					defaultViewport: chromium.defaultViewport,
-					executablePath : await chromium.executablePath(),
-					headless       : chromium.headless,
-				});
-			}
+			// Launch browser with provided arguments
+			browser = await puppeteer.default.launch({
+				args          	: chromium.args.concat(this.browserArgs || []),
+				defaultViewport: chromium.defaultViewport,
+				executablePath : await chromium.executablePath(),
+				headless       : chromium.headless,
+			});
 
 			const page = await browser.newPage();
 
