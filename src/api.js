@@ -22,8 +22,6 @@
 import http, { IncomingMessage, } from 'http';
 import https from 'https';
 
-import chromium from '@sparticuz/chromium';
-
 import { version, } from '../package.json';
 
 import Book from './book';
@@ -308,10 +306,8 @@ class API {
 		try {
 			// Launch browser with provided arguments
 			browser = await puppeteer.default.launch({
-				args          	: chromium.args.concat(this.browserArgs || []),
-				defaultViewport: chromium.defaultViewport,
-				executablePath : await chromium.executablePath(),
-				headless       : chromium.headless,
+				headless: 'new',
+				args    : this.browserArgs || [],
 			});
 
 			const page = await browser.newPage();
