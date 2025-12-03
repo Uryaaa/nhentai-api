@@ -333,42 +333,36 @@ class API {
 			const isRedirectEndpoint = options.path.includes('/random');
 
 			if (isRedirectEndpoint) {
-				// For redirect endpoints, we need to intercept the redirect response
-				let redirectResponse = null;
-
-				page.on('response', response => {
-					if (response.status() === 302 && response.url() === url) {
-						redirectResponse = response;
-					}
-				});
-
-				// Navigate without following redirects
-				await page.setRequestInterception(true);
-				page.on('request', request => {
-					request.continue();
-				});
-
+				// For redirect endpoints, let Puppeteer follow the redirect and extract the book ID from the final URL
 				try {
 					await page.goto(url, {
 						waitUntil: 'networkidle0',
 						timeout  : 30000,
 					});
-				} catch (error) {
-					// Expected for redirect endpoints
-				}
 
-				if (redirectResponse) {
-					// Simulate the error that the traditional method expects
-					const mockError = new Error(`Request failed with status code ${redirectResponse.status()}`);
-					mockError.httpResponse = {
-						statusCode: redirectResponse.status(),
-						headers   : {
-							location: redirectResponse.headers().location,
-						},
-					};
-					throw APIError.absorb(mockError, mockError.httpResponse);
-				} else {
-					throw new Error('Expected redirect response not found');
+					// Get the final URL after redirect and extract the book ID
+					const finalUrl = page.url(),
+						idMatch = finalUrl.match(/\/g\/(\d+)/);
+
+					if (idMatch && idMatch[1]) {
+						// Simulate the error that the traditional method expects
+						const mockError = new Error('Request failed with status code 302');
+						mockError.httpResponse = {
+							statusCode: 302,
+							headers   : {
+								location: finalUrl,
+							},
+						};
+						throw APIError.absorb(mockError, mockError.httpResponse);
+					} else {
+						throw new Error(`Could not extract book ID from redirect URL: ${finalUrl}`);
+					}
+				} catch (error) {
+					// Re-throw APIError instances
+					if (error instanceof APIError) {
+						throw error;
+					}
+					throw new Error(`Failed to follow redirect: ${error.message}`);
 				}
 			} else {
 				// Set request headers to get JSON response for API endpoints

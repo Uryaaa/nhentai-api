@@ -564,13 +564,14 @@ puppeteer.default.use(StealthPlugin());const url=`http${this.ssl?"s":""}://${opt
 browser=await puppeteer.default.launch({headless:"new",args:this.browserArgs||[]});const page=await browser.newPage();// Set user agent
 // Set cookies if provided
 if(await page.setUserAgent(`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Check if this is a redirect endpoint (like /random/)
-if(options.path.includes("/random")){
-// For redirect endpoints, we need to intercept the redirect response
-let redirectResponse=null;page.on("response",(response=>{302===response.status()&&response.url()===url&&(redirectResponse=response)})),// Navigate without following redirects
-await page.setRequestInterception(!0),page.on("request",(request=>{request.continue()}));try{await page.goto(url,{waitUntil:"networkidle0",timeout:3e4})}catch(error){// Expected for redirect endpoints
-}if(redirectResponse){
+if(options.path.includes("/random"))
+// For redirect endpoints, let Puppeteer follow the redirect and extract the book ID from the final URL
+try{await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});// Get the final URL after redirect and extract the book ID
+const finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/);if(idMatch&&idMatch[1]){
 // Simulate the error that the traditional method expects
-const mockError=new Error(`Request failed with status code ${redirectResponse.status()}`);throw mockError.httpResponse={statusCode:redirectResponse.status(),headers:{location:redirectResponse.headers().location}},APIError.absorb(mockError,mockError.httpResponse)}throw new Error("Expected redirect response not found")}{
+const mockError=new Error("Request failed with status code 302");throw mockError.httpResponse={statusCode:302,headers:{location:finalUrl}},APIError.absorb(mockError,mockError.httpResponse)}throw new Error(`Could not extract book ID from redirect URL: ${finalUrl}`)}catch(error){
+// Re-throw APIError instances
+if(error instanceof APIError)throw error;throw new Error(`Failed to follow redirect: ${error.message}`)}else{
 // Set request headers to get JSON response for API endpoints
 await page.setExtraHTTPHeaders({Accept:"application/json, text/plain, */*","Content-Type":"application/json"});// Navigate to the URL and get the response
 const response=await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});if(!response.ok())throw new Error(`Request failed with status code ${response.status()}`);// Get the response text directly from the response
