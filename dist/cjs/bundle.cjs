@@ -561,25 +561,17 @@ response=_response,{statusCode:statusCode}=response,contentType=response.headers
 puppeteer=await Promise.resolve().then((function(){return _interopNamespace(require("puppeteer-extra"))})),StealthPlugin=(await Promise.resolve().then((function(){return _interopNamespace(require("puppeteer-extra-plugin-stealth"))}))).default}catch(error){throw new Error("Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth")}// Use stealth plugin
 puppeteer.default.use(StealthPlugin());const url=`http${this.ssl?"s":""}://${options.host}${options.path}`;let browser;try{
 // Launch browser with provided arguments
-browser=await puppeteer.default.launch({headless:"new",args:this.browserArgs||[]});const page=await browser.newPage();// Set user agent
+const defaultArgs=["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-blink-features=AutomationControlled"];browser=await puppeteer.default.launch({headless:"new",args:[...defaultArgs,...this.browserArgs||[]],ignoreDefaultArgs:["--enable-automation"]});const page=await browser.newPage();// Set a realistic user agent
 // Set cookies if provided
-if(await page.setUserAgent(`nhentai-api-client/3.5.0 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Check if this is a redirect endpoint (like /random/)
-if(options.path.includes("/random"))
-// For redirect endpoints, navigate and wait for JS-based redirect to complete
-try{await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});// Wait for the URL to change from /random/ to /g/XXXXX/ (JS redirect)
-let finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/);// If still on /random/, wait for URL change or try to extract from page content
-if(!idMatch)try{
-// Wait up to 10 seconds for URL to change to a gallery page
-await page.waitForFunction((// eslint-disable-next-line no-undef
-()=>window.location.href.includes("/g/")),{timeout:1e4}),finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/)}catch(waitError){
-// URL didn't change, try to extract book ID from page content
-const pageContent=await page.content(),
-// Look for gallery ID in the page (e.g., in meta tags or scripts)
-contentMatch=pageContent.match(/\/g\/(\d+)/)||pageContent.match(/"id"\s*:\s*(\d+)/)||pageContent.match(/gallery\/(\d+)/);contentMatch&&contentMatch[1]&&(finalUrl=`/g/${contentMatch[1]}/`,idMatch=[null,contentMatch[1]])}if(idMatch&&idMatch[1]){
-// Simulate the error that the traditional method expects
-const mockError=new Error("Request failed with status code 302");throw mockError.httpResponse={statusCode:302,headers:{location:finalUrl}},APIError.absorb(mockError,mockError.httpResponse)}throw new Error(`Could not extract book ID from redirect URL: ${finalUrl}`)}catch(error){
-// Re-throw APIError instances
-if(error instanceof APIError)throw error;throw new Error(`Failed to follow redirect: ${error.message}`)}else{
+if(await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Check if this is a redirect endpoint (like /random/)
+if(options.path.includes("/random")){
+// For redirect endpoints, capture the 302 response with location header
+let redirectLocation=null;// Set up response listener BEFORE navigation to capture the 302
+// If we captured the redirect location, use it
+if(page.on("response",(response=>{302===response.status()&&response.url().includes("/random")&&(redirectLocation=response.headers().location)})),// Navigate and let Puppeteer follow the redirect
+await page.goto(url,{waitUntil:"domcontentloaded",timeout:3e4}),redirectLocation){const mockError=new Error("Request failed with status code 302");throw mockError.httpResponse={statusCode:302,headers:{location:redirectLocation}},APIError.absorb(mockError,mockError.httpResponse)}// Fallback: try to extract from final URL or page content
+const finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/);if(idMatch&&idMatch[1]){const mockError=new Error("Request failed with status code 302");throw mockError.httpResponse={statusCode:302,headers:{location:finalUrl}},APIError.absorb(mockError,mockError.httpResponse)}// Last resort: extract from page content
+const pageContent=await page.content(),contentMatch=pageContent.match(/\/g\/(\d+)/)||pageContent.match(/#(\d+)/)||pageContent.match(/gallery\/(\d+)/);if(contentMatch&&contentMatch[1]){const mockError=new Error("Request failed with status code 302");throw mockError.httpResponse={statusCode:302,headers:{location:`/g/${contentMatch[1]}/`}},APIError.absorb(mockError,mockError.httpResponse)}throw new Error(`Could not extract book ID from page. Final URL: ${finalUrl}`)}{
 // Set request headers to get JSON response for API endpoints
 await page.setExtraHTTPHeaders({Accept:"application/json, text/plain, */*","Content-Type":"application/json"});// Navigate to the URL and get the response
 const response=await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});if(!response.ok())throw new Error(`Request failed with status code ${response.status()}`);// Get the response text directly from the response
