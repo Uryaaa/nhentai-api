@@ -545,7 +545,7 @@ return hosts[Math.floor(Math.random()*hosts.length)]}
    */request(options){
 // Use Puppeteer if enabled
 if(this.usePuppeteer)return this.requestWithPuppeteer(options);// Use native HTTP requests
-let{net:net,agent:agent,cookies:cookies}=this;return new Promise(((resolve,reject)=>{const headers={"User-Agent":`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`};// Add cookies if provided
+let{net:net,agent:agent,cookies:cookies}=this;return new Promise(((resolve,reject)=>{const headers={"User-Agent":`nhentai-api-client/3.5.0 Node.js/${process.versions.node}`};// Add cookies if provided
 cookies&&(headers.Cookie=cookies),Object.assign(options,{agent:agent,headers:headers}),net.get(options,(_response=>{const
 /** @type {IncomingMessage}*/
 response=_response,{statusCode:statusCode}=response,contentType=response.headers["content-type"];let error;if(200!==statusCode?error=new Error(`Request failed with status code ${statusCode}`):/^application\/json/.test(contentType)||(error=new Error(`Invalid content-type - expected application/json but received ${contentType}`)),error)return response.resume(),void reject(APIError.absorb(error,response));response.setEncoding("utf8");let rawData="";response.on("data",(chunk=>rawData+=chunk)),response.on("end",(()=>{try{resolve(JSON.parse(rawData))}catch(error){reject(APIError.absorb(error,response))}}))})).on("error",(error=>reject(APIError.absorb(error))))}))}
@@ -563,11 +563,19 @@ puppeteer.default.use(StealthPlugin());const url=`http${this.ssl?"s":""}://${opt
 // Launch browser with provided arguments
 browser=await puppeteer.default.launch({headless:"new",args:this.browserArgs||[]});const page=await browser.newPage();// Set user agent
 // Set cookies if provided
-if(await page.setUserAgent(`nhentai-api-client/3.4.3 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Check if this is a redirect endpoint (like /random/)
+if(await page.setUserAgent(`nhentai-api-client/3.5.0 Node.js/${process.versions.node}`),this.cookies){const cookies=this.cookies.split(";").map((cookieStr=>{const[name,value]=cookieStr.trim().split("=");return{name:name.trim(),value:value?value.trim():"",domain:options.host}}));await page.setCookie(...cookies)}// Check if this is a redirect endpoint (like /random/)
 if(options.path.includes("/random"))
-// For redirect endpoints, let Puppeteer follow the redirect and extract the book ID from the final URL
-try{await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});// Get the final URL after redirect and extract the book ID
-const finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/);if(idMatch&&idMatch[1]){
+// For redirect endpoints, navigate and wait for JS-based redirect to complete
+try{await page.goto(url,{waitUntil:"networkidle0",timeout:3e4});// Wait for the URL to change from /random/ to /g/XXXXX/ (JS redirect)
+let finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/);// If still on /random/, wait for URL change or try to extract from page content
+if(!idMatch)try{
+// Wait up to 10 seconds for URL to change to a gallery page
+await page.waitForFunction((// eslint-disable-next-line no-undef
+()=>window.location.href.includes("/g/")),{timeout:1e4}),finalUrl=page.url(),idMatch=finalUrl.match(/\/g\/(\d+)/)}catch(waitError){
+// URL didn't change, try to extract book ID from page content
+const pageContent=await page.content(),
+// Look for gallery ID in the page (e.g., in meta tags or scripts)
+contentMatch=pageContent.match(/\/g\/(\d+)/)||pageContent.match(/"id"\s*:\s*(\d+)/)||pageContent.match(/gallery\/(\d+)/);contentMatch&&contentMatch[1]&&(finalUrl=`/g/${contentMatch[1]}/`,idMatch=[null,contentMatch[1]])}if(idMatch&&idMatch[1]){
 // Simulate the error that the traditional method expects
 const mockError=new Error("Request failed with status code 302");throw mockError.httpResponse={statusCode:302,headers:{location:finalUrl}},APIError.absorb(mockError,mockError.httpResponse)}throw new Error(`Could not extract book ID from redirect URL: ${finalUrl}`)}catch(error){
 // Re-throw APIError instances

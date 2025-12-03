@@ -333,16 +333,42 @@ class API {
 			const isRedirectEndpoint = options.path.includes('/random');
 
 			if (isRedirectEndpoint) {
-				// For redirect endpoints, let Puppeteer follow the redirect and extract the book ID from the final URL
+				// For redirect endpoints, navigate and wait for JS-based redirect to complete
 				try {
 					await page.goto(url, {
 						waitUntil: 'networkidle0',
 						timeout  : 30000,
 					});
 
-					// Get the final URL after redirect and extract the book ID
-					const finalUrl = page.url(),
+					// Wait for the URL to change from /random/ to /g/XXXXX/ (JS redirect)
+					let finalUrl = page.url(),
 						idMatch = finalUrl.match(/\/g\/(\d+)/);
+
+					// If still on /random/, wait for URL change or try to extract from page content
+					if (!idMatch) {
+						try {
+							// Wait up to 10 seconds for URL to change to a gallery page
+							await page.waitForFunction(
+								// eslint-disable-next-line no-undef
+								() => window.location.href.includes('/g/'),
+								{ timeout: 10000, }
+							);
+							finalUrl = page.url();
+							idMatch = finalUrl.match(/\/g\/(\d+)/);
+						} catch (waitError) {
+							// URL didn't change, try to extract book ID from page content
+							const pageContent = await page.content(),
+								// Look for gallery ID in the page (e.g., in meta tags or scripts)
+								contentMatch = pageContent.match(/\/g\/(\d+)/) ||
+									pageContent.match(/"id"\s*:\s*(\d+)/) ||
+									pageContent.match(/gallery\/(\d+)/);
+
+							if (contentMatch && contentMatch[1]) {
+								finalUrl = `/g/${contentMatch[1]}/`;
+								idMatch = [ null, contentMatch[1], ];
+							}
+						}
+					}
 
 					if (idMatch && idMatch[1]) {
 						// Simulate the error that the traditional method expects
