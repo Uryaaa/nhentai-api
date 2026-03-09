@@ -72,10 +72,34 @@ declare class API {
      * Select a host from an array of hosts using round-robin.
      * @param {string[]} hosts Array of hosts.
      * @param {string} [fallback] Fallback host if array is empty.
+     * @param {string} [rotationKey='default'] Rotation state key.
      * @returns {string} Selected host.
      * @private
      */
     private selectHost;
+    /**
+     * Build request URL.
+     * @param {string} host Host.
+     * @param {string} path Path.
+     * @returns {string} Request URL.
+     * @private
+     */
+    private buildRequestURL;
+    /**
+     * Build request headers.
+     * @param {object} [additionalHeaders={}] Additional headers.
+     * @param {boolean} [includeCookies=true] Include Cookie header.
+     * @returns {object} Request headers.
+     * @private
+     */
+    private getRequestHeaders;
+    /**
+     * Get Puppeteer cookies for a host.
+     * @param {string} host Host.
+     * @returns {object[]} Puppeteer cookies.
+     * @private
+     */
+    private getPuppeteerCookies;
     /**
      * JSON get request.
      * @param {object} options      HTTP(S) request options.
@@ -154,12 +178,27 @@ declare class API {
      */
     getRandomBook(): Promise<Book>;
     /**
-     * Detect the actual cover filename extension for nhentai's double extension format.
+     * Get cover filename extension candidates.
      * @param {Image} image Cover image.
-     * @returns {string} The actual extension to use in the URL.
+     * @returns {string[]} Candidate extensions to try.
      * @private
      */
-    private detectCoverExtension;
+    private getCoverExtensionCandidates;
+    /**
+     * Probe a possible cover filename extension.
+     * @param {Image} image Cover image.
+     * @param {string} extension Candidate extension.
+     * @returns {Promise<boolean>} Whatever the candidate resolved to an image response.
+     * @private
+     */
+    private probeCoverExtension;
+    /**
+     * Resolve a working cover image URL by probing known filename variants.
+     * @param {Image} image Cover image.
+     * @returns {Promise<string>} Working cover image URL.
+     * @async
+     */
+    resolveCoverURL(image: Image): Promise<string>;
     /**
      * Get image URL.
      * @param {Image} image Image.

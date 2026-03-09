@@ -2,6 +2,19 @@ import { Agent, } from 'http';
 import { Agent as SSLAgent, } from 'https';
 
 
+const DEFAULT_API_HOST = 'nhentai.net',
+	DEFAULT_IMAGE_HOSTS = [
+		'i1.nhentai.net',
+		'i2.nhentai.net',
+		'i3.nhentai.net',
+	],
+	DEFAULT_THUMB_HOSTS = [
+		't1.nhentai.net',
+		't2.nhentai.net',
+		't3.nhentai.net',
+	];
+
+
 /**
  * Agent-like object or Agent class or it's instance.
  * @global
@@ -36,17 +49,9 @@ import { Agent as SSLAgent, } from 'https';
  */
 function processOptions({
 	hosts: {
-		api    = 'nhentai.net',
-		images = [
-			'i1.nhentai.net',
-			'i2.nhentai.net',
-			'i3.nhentai.net',
-		],
-		thumbs = [
-			't1.nhentai.net',
-			't2.nhentai.net',
-			't3.nhentai.net',
-		],
+		api    = DEFAULT_API_HOST,
+		images = DEFAULT_IMAGE_HOSTS,
+		thumbs = DEFAULT_THUMB_HOSTS,
 	} = {},
 	ssl          = true,
 	agent        = null,
@@ -59,22 +64,42 @@ function processOptions({
 			? SSLAgent
 			: Agent;
 
-	if (agent.constructor.name === 'Function')
+	if (typeof agent === 'function')
 		agent = new agent();
 
 	// Normalize hosts to arrays for consistent handling
-	const normalizeHosts = (hostConfig) => {
-		if (typeof hostConfig === 'string') {
-			return [ hostConfig, ];
-		}
-		return Array.isArray(hostConfig) ? hostConfig : [ hostConfig, ];
-	};
+	const normalizeHosts = (hostConfig, fallbackHosts) => {
+			if (typeof hostConfig === 'string') {
+				const normalizedHost = hostConfig.trim();
+
+				return normalizedHost
+					? [ normalizedHost, ]
+					: [ ...fallbackHosts, ];
+			}
+
+			if (Array.isArray(hostConfig)) {
+				const normalizedHosts = hostConfig
+					.filter(host => typeof host === 'string')
+					.map(host => host.trim())
+					.filter(Boolean);
+
+				return normalizedHosts.length > 0
+					? normalizedHosts
+					: [ ...fallbackHosts, ];
+			}
+
+			return [ ...fallbackHosts, ];
+		},
+
+	 normalizedAPIHost = typeof api === 'string' && api.trim()
+			? api.trim()
+			: DEFAULT_API_HOST;
 
 	return {
 		hosts: {
-			api,
-			images: normalizeHosts(images),
-			thumbs: normalizeHosts(thumbs),
+			api   : normalizedAPIHost,
+			images: normalizeHosts(images, DEFAULT_IMAGE_HOSTS),
+			thumbs: normalizeHosts(thumbs, DEFAULT_THUMB_HOSTS),
 		},
 		ssl,
 		agent,

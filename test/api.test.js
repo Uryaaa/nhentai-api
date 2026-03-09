@@ -4,6 +4,21 @@ const
 	nhentai = require('..');
 
 
+function createCover(type = 'j', media = 1563073) {
+	const { Book, Image, } = nhentai,
+		book = new Book({ media, }),
+		cover = Image.parse({
+			t: type,
+			w: 350,
+			h: 500,
+		});
+
+	book.setCover(cover);
+
+	return cover;
+}
+
+
 describe('API', () => {
 	const { API, } = nhentai;
 
@@ -107,6 +122,112 @@ describe('API', () => {
 			assert.strictEqual(api.hosts.thumbs.length, 1);
 			assert.strictEqual(api.hosts.images[0], 'i.nhentai.net');
 			assert.strictEqual(api.hosts.thumbs[0], 't.nhentai.net');
+
+		});
+
+		it('should fall back to default hosts when host configuration is invalid', () => {
+
+			let api = new API({
+				hosts: {
+					images: null,
+					thumbs: [],
+				},
+			});
+
+			assert.deepStrictEqual(api.hosts.images, [
+				'i1.nhentai.net',
+				'i2.nhentai.net',
+				'i3.nhentai.net',
+			]);
+			assert.deepStrictEqual(api.hosts.thumbs, [
+				't1.nhentai.net',
+				't2.nhentai.net',
+				't3.nhentai.net',
+			]);
+
+		});
+
+		it('should rotate media hosts in round-robin order', () => {
+
+			let api = new API({
+				hosts: {
+					images: [
+						'i1.nhentai.net', 'i2.nhentai.net', 'i3.nhentai.net',
+					],
+				},
+			});
+
+			assert.strictEqual(api.getAPIArgs('images', 'bookPage').host, 'i1.nhentai.net');
+			assert.strictEqual(api.getAPIArgs('images', 'bookPage').host, 'i2.nhentai.net');
+			assert.strictEqual(api.getAPIArgs('images', 'bookPage').host, 'i3.nhentai.net');
+			assert.strictEqual(api.getAPIArgs('images', 'bookPage').host, 'i1.nhentai.net');
+
+		});
+
+		it('should parse Puppeteer cookies without breaking values containing equals signs', () => {
+
+			let api = new API({
+				cookies: 'session=abc=123; csrftoken=def456; invalidcookie',
+			});
+
+			assert.deepStrictEqual(api.getPuppeteerCookies('nhentai.net'), [
+				{
+					name : 'session',
+					value: 'abc=123',
+					url  : 'https://nhentai.net/',
+				},
+				{
+					name : 'csrftoken',
+					value: 'def456',
+					url  : 'https://nhentai.net/',
+				},
+			]);
+
+		});
+
+		describe('#cover handling', () => {
+
+			it('should generate cover URL variants for inconsistent cover extensions without duplicates', () => {
+
+				let api = new API({
+						hosts: {
+							thumbs: 't.nhentai.net',
+						},
+					}),
+					cover = createCover('j', 1563073),
+					variants = api.getCoverURLVariants(cover);
+
+				assert.ok(variants.includes('https://t.nhentai.net/galleries/1563073/cover.jpg'));
+				assert.ok(variants.includes('https://t.nhentai.net/galleries/1563073/cover.jpg.webp'));
+				assert.ok(variants.includes('https://t.nhentai.net/galleries/1563073/cover.webp'));
+				assert.strictEqual(variants.length, new Set(variants).size);
+
+			});
+
+			it('should cache the resolved cover extension for subsequent image URL generation', async () => {
+
+				let api = new API({
+						hosts: {
+							thumbs: 't.nhentai.net',
+						},
+					}),
+					cover = createCover('j', 1563073),
+					probedExtensions = [];
+
+				api.probeCoverExtension = (_image, extension) => {
+					probedExtensions.push(extension);
+
+					return Promise.resolve(extension === 'jpg.webp');
+				};
+
+				const resolvedURL = await api.resolveCoverURL(cover);
+
+				assert.ok(probedExtensions.includes('jpg.webp'));
+				assert.strictEqual(resolvedURL, 'https://t.nhentai.net/galleries/1563073/cover.jpg.webp');
+				assert.strictEqual(api.getImageURL(cover), resolvedURL);
+				assert.strictEqual(api.getCoverURLVariants(cover)[0], resolvedURL);
+
+			});
 
 		});
 

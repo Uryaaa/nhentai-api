@@ -32,6 +32,40 @@ import { Search, } from './search';
 import { Tag, } from './tag';
 
 
+const DEFAULT_PUPPETEER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+	hostRotationState = new WeakMap(),
+	coverResolutionState = new WeakMap();
+
+let cachedPuppeteer = null,
+	stealthPluginEnabled = false;
+
+
+async function loadPuppeteer() {
+	if (cachedPuppeteer) {
+		return cachedPuppeteer;
+	}
+
+	let puppeteer, StealthPlugin;
+
+	try {
+		// Dynamic import to avoid requiring puppeteer when not needed
+		puppeteer = await import('puppeteer-extra');
+		StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+	} catch (error) {
+		throw new Error('Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth');
+	}
+
+	cachedPuppeteer = puppeteer.default;
+
+	if (!stealthPluginEnabled) {
+		cachedPuppeteer.use(StealthPlugin());
+		stealthPluginEnabled = true;
+	}
+
+	return cachedPuppeteer;
+}
+
+
 /**
  * API arguments
  * @typedef {object} APIArgs
@@ -182,6 +216,8 @@ class API {
 		let params = processOptions(options);
 
 		Object.assign(this, params);
+		hostRotationState.set(this, new Map());
+		coverResolutionState.set(this, new Map());
 	}
 
 	/**
@@ -198,17 +234,99 @@ class API {
 	 * Select a host from an array of hosts using round-robin.
 	 * @param {string[]} hosts Array of hosts.
 	 * @param {string} [fallback] Fallback host if array is empty.
+	 * @param {string} [rotationKey='default'] Rotation state key.
 	 * @returns {string} Selected host.
 	 * @private
 	 */
-	selectHost(hosts, fallback = 'nhentai.net') {
+	selectHost(hosts, fallback = 'nhentai.net', rotationKey = 'default') {
 		if (!Array.isArray(hosts) || hosts.length === 0) {
 			return fallback;
 		}
 
-		// Simple round-robin selection based on current time
-		const index = Math.floor(Math.random() * hosts.length);
-		return hosts[index];
+		let rotationMap = hostRotationState.get(this);
+
+		if (!rotationMap) {
+			rotationMap = new Map();
+			hostRotationState.set(this, rotationMap);
+		}
+
+		const currentIndex = rotationMap.get(rotationKey) || 0,
+			host = hosts[currentIndex % hosts.length] || fallback;
+
+		rotationMap.set(rotationKey, (currentIndex + 1) % hosts.length);
+
+		return host;
+	}
+
+	/**
+	 * Build request URL.
+	 * @param {string} host Host.
+	 * @param {string} path Path.
+	 * @returns {string} Request URL.
+	 * @private
+	 */
+	buildRequestURL(host, path) {
+		return `http${this.ssl ? 's' : ''}://${host}${path}`;
+	}
+
+	/**
+	 * Build request headers.
+	 * @param {object} [additionalHeaders={}] Additional headers.
+	 * @param {boolean} [includeCookies=true] Include Cookie header.
+	 * @returns {object} Request headers.
+	 * @private
+	 */
+	getRequestHeaders(additionalHeaders = {}, includeCookies = true) {
+		const headers = {
+			'User-Agent': `nhentai-api-client/${version} Node.js/${process.versions.node}`,
+			...additionalHeaders,
+		};
+
+		if (includeCookies && this.cookies) {
+			headers.Cookie = this.cookies;
+		}
+
+		return headers;
+	}
+
+	/**
+	 * Get Puppeteer cookies for a host.
+	 * @param {string} host Host.
+	 * @returns {object[]} Puppeteer cookies.
+	 * @private
+	 */
+	getPuppeteerCookies(host) {
+		if (!this.cookies) {
+			return [];
+		}
+
+		const cookieURL = this.buildRequestURL(host, '/');
+
+		return this.cookies
+			.split(';')
+			.map(cookie => cookie.trim())
+			.filter(Boolean)
+			.map(cookie => {
+				const separatorIndex = cookie.indexOf('=');
+
+				if (separatorIndex <= 0) {
+					return null;
+				}
+
+				const name = cookie.slice(0, separatorIndex).trim(),
+					value = cookie.slice(separatorIndex + 1).trim();
+
+				if (!name) {
+					return null;
+				}
+
+				return {
+					name,
+					value,
+					url: cookieURL,
+				};
+			})
+			.filter(cookie => cookie !== null);
 	}
 
 	/**
@@ -228,17 +346,9 @@ class API {
 		let {
 			net,
 			agent,
-			cookies,
 		} = this;
 		return new Promise((resolve, reject) => {
-			const headers = {
-				'User-Agent': `nhentai-api-client/${version} Node.js/${process.versions.node}`,
-			};
-
-			// Add cookies if provided
-			if (cookies) {
-				headers.Cookie = cookies;
-			}
+			const headers = this.getRequestHeaders();
 
 			Object.assign(options, {
 				agent,
@@ -287,20 +397,8 @@ class API {
 	 * @private
 	 */
 	async requestWithPuppeteer(options) {
-		let puppeteer, StealthPlugin;
-
-		try {
-			// Dynamic import to avoid requiring puppeteer when not needed
-			puppeteer = await import('puppeteer-extra');
-			StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
-		} catch (error) {
-			throw new Error('Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth');
-		}
-
-		// Use stealth plugin
-		puppeteer.default.use(StealthPlugin());
-
-		const url = `http${this.ssl ? 's' : ''}://${options.host}${options.path}`;
+		const puppeteer = await loadPuppeteer(),
+			url = this.buildRequestURL(options.host, options.path);
 		let browser;
 
 		try {
@@ -311,7 +409,7 @@ class API {
 				'--disable-dev-shm-usage',
 				'--disable-blink-features=AutomationControlled',
 			];
-			browser = await puppeteer.default.launch({
+			browser = await puppeteer.launch({
 				headless         : 'new',
 				args             : [ ...defaultArgs, ...this.browserArgs || [], ],
 				ignoreDefaultArgs: [ '--enable-automation', ],
@@ -320,19 +418,12 @@ class API {
 			const page = await browser.newPage();
 
 			// Set a realistic user agent
-			await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+			await page.setUserAgent(DEFAULT_PUPPETEER_USER_AGENT);
 
 			// Set cookies if provided
-			if (this.cookies) {
-				const cookieStrings = this.cookies.split(';'),
-					cookies = cookieStrings.map(cookieStr => {
-						const [ name, value, ] = cookieStr.trim().split('=');
-						return {
-							name  : name.trim(),
-							value : value ? value.trim() : '',
-							domain: options.host,
-						};
-					});
+			const cookies = this.getPuppeteerCookies(options.host);
+
+			if (cookies.length > 0) {
 				await page.setCookie(...cookies);
 			}
 
@@ -403,19 +494,28 @@ class API {
 				throw new Error(`Could not extract book ID from page. Final URL: ${finalUrl}`);
 			} else {
 				// Set request headers to get JSON response for API endpoints
-				await page.setExtraHTTPHeaders({
-					'Accept'      : 'application/json, text/plain, */*',
-					'Content-Type': 'application/json',
-				});
+				await page.setExtraHTTPHeaders(this.getRequestHeaders({
+					Accept: 'application/json, text/plain, */*',
+				}, false));
 
 				// Navigate to the URL and get the response
 				const response = await page.goto(url, {
-					waitUntil: 'networkidle0',
+					waitUntil: 'domcontentloaded',
 					timeout  : 30000,
 				});
 
+				if (!response) {
+					throw new Error('Request did not receive an HTTP response');
+				}
+
 				if (!response.ok()) {
-					throw new Error(`Request failed with status code ${response.status()}`);
+					throw APIError.absorb(
+						new Error(`Request failed with status code ${response.status()}`),
+						{
+							statusCode: response.status(),
+							headers   : response.headers(),
+						}
+					);
 				}
 
 				// Get the response text directly from the response
@@ -491,7 +591,7 @@ class API {
 
 		// Select host from array or use single host
 		const host = Array.isArray(hostConfig)
-			? this.selectHost(hostConfig, hostConfig[0])
+			? this.selectHost(hostConfig, hostConfig[0], hostType)
 			: hostConfig;
 
 		return {
@@ -639,53 +739,124 @@ class API {
 	}
 
 	/**
-	 * Detect the actual cover filename extension for nhentai's double extension format.
+	 * Get cover filename extension candidates.
+	 * nHentai's CDN can serve covers with inconsistent simple and double extensions,
+	 * so this method returns a best-effort ordered candidate list instead of trying
+	 * to guess one "correct" extension from API metadata alone.
 	 * @param {Image} image Cover image.
-	 * @returns {string} The actual extension to use in the URL.
+	 * @returns {string[]} Candidate extensions to try.
 	 * @private
 	 */
-	detectCoverExtension(image) {
-		const reportedExtension = image.type.extension;
+	getCoverExtensionCandidates(image) {
+		if (!(image instanceof Image) || !image.isCover) {
+			throw new Error('image must be a cover Image instance.');
+		}
 
-		// Handle WebP cases - both simple and double extension formats
-		if (reportedExtension === 'webp') {
-			// Some WebP files also have double extensions like cover.webp.webp
-			// We need to detect this based on media ID or other patterns
+		let resolutionCache = coverResolutionState.get(this);
 
-			// For now, we'll try the double WebP format for certain media ID ranges
-			// This is based on observation that newer uploads tend to have cover.webp.webp
-			const mediaId = image.book.media;
+		if (!resolutionCache) {
+			resolutionCache = new Map();
+			coverResolutionState.set(this, resolutionCache);
+		}
 
-			// Media IDs above ~3000000 seem to use cover.webp.webp format
-			// This is a heuristic that may need adjustment based on more data
-			if (mediaId > 3000000) {
-				return 'webp.webp';
+		const reportedExtension = image.type.extension,
+			resolvedExtension = resolutionCache.get(image.book.media),
+			baseExtensions = [
+				reportedExtension,
+				'jpg',
+				'png',
+				'gif',
+				'webp',
+			],
+			transcodedExtensions = [
+				'webp',
+				'png',
+				'jpg',
+				'gif',
+			],
+			candidates = [];
+
+		if (resolvedExtension) {
+			candidates.push(resolvedExtension);
+		}
+
+		baseExtensions.forEach(baseExtension => {
+			candidates.push(baseExtension);
+
+			transcodedExtensions.forEach(transcodedExtension => {
+				candidates.push(`${baseExtension}.${transcodedExtension}`);
+			});
+		});
+
+		return [ ...new Set(candidates.filter(Boolean)), ];
+	}
+
+	/**
+	 * Probe a possible cover filename extension.
+	 * @param {Image} image Cover image.
+	 * @param {string} extension Candidate extension.
+	 * @returns {Promise<boolean>} Whatever the candidate resolved to an image response.
+	 * @private
+	 */
+	probeCoverExtension(image, extension) {
+		let { host, apiPath, } = this.getAPIArgs('thumbs', 'bookCover'),
+			{
+				net,
+				agent,
+			} = this;
+
+		return new Promise(resolve => {
+			const request = net.get({
+				host   : host,
+				path   : apiPath(image.book.media, extension),
+				agent  : agent,
+				headers: this.getRequestHeaders({
+					Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+				}),
+			}, _response => {
+				const
+					/** @type {IncomingMessage}*/
+					response = _response,
+					contentType = response.headers['content-type'],
+					isImageResponse = response.statusCode === 200
+						&& (!contentType || (/^image\//).test(contentType));
+
+				response.destroy();
+				resolve(isImageResponse);
+			});
+
+			request.on('error', () => resolve(false));
+		});
+	}
+
+	/**
+	 * Resolve a working cover image URL by probing known filename variants.
+	 * The successful extension is cached per API instance for future `getImageURL()` calls.
+	 * @param {Image} image Cover image.
+	 * @returns {Promise<string>} Working cover image URL.
+	 * @async
+	 */
+	async resolveCoverURL(image) {
+		if (!(image instanceof Image) || !image.isCover) {
+			throw new Error('image must be a cover Image instance.');
+		}
+
+		let resolutionCache = coverResolutionState.get(this);
+
+		if (!resolutionCache) {
+			resolutionCache = new Map();
+			coverResolutionState.set(this, resolutionCache);
+		}
+
+		for (const extension of this.getCoverExtensionCandidates(image)) {
+			if (await this.probeCoverExtension(image, extension)) {
+				resolutionCache.set(image.book.media, extension);
+
+				return this.getImageURL(image);
 			}
-
-			// Default to simple webp for older uploads
-			return 'webp';
 		}
 
-		// For non-webp extensions, nhentai often serves double extensions
-		// The pattern is: cover.{original_extension}.webp
-		// We need to detect what the original extension should be
-
-		// Map API type codes to likely intermediate extensions
-		const intermediateExtensionMap = {
-				'jpg' : 'jpg',    // API reports 'j' -> likely cover.jpg.webp
-				'jpeg': 'jpg',    // API reports 'jpeg' -> likely cover.jpg.webp
-				'png' : 'png',    // API reports 'p' -> likely cover.png.webp
-				'gif' : 'gif',    // API reports 'g' -> likely cover.gif.webp
-			},
-			intermediateExt = intermediateExtensionMap[reportedExtension];
-
-		if (intermediateExt) {
-			// Return double extension format: original.webp
-			return `${intermediateExt}.webp`;
-		}
-
-		// Fallback to reported extension if we can't map it
-		return reportedExtension;
+		throw new Error(`Unable to resolve a working cover URL for media ${image.book.media}.`);
 	}
 
 	/**
@@ -698,14 +869,15 @@ class API {
 			let { host, apiPath, } = image.isCover
 					? this.getAPIArgs('thumbs', 'bookCover')
 					: this.getAPIArgs('images', 'bookPage'),
-				extension;
-
-			// Handle cover images with potential double extensions
-			if (image.isCover) {
-				extension = this.detectCoverExtension(image);
-			} else {
-				// Regular pages use simple extensions
 				extension = image.type.extension;
+
+			if (image.isCover) {
+				const resolutionCache = coverResolutionState.get(this),
+					resolvedExtension = resolutionCache
+						? resolutionCache.get(image.book.media)
+						: null;
+
+				extension = resolvedExtension || extension;
 			}
 
 			return `http${this.ssl ? 's' : ''}://${host}` + (image.isCover
@@ -746,28 +918,9 @@ class API {
 
 		let { host, apiPath, } = this.getAPIArgs('thumbs', 'bookCover'),
 			baseURL = `http${this.ssl ? 's' : ''}://${host}`,
-			reportedExt = image.type.extension,
-			variants = [],
-			// Add the smart detection URL (our primary method)
-			smartExt = this.detectCoverExtension(image);
+			variants = this.getCoverExtensionCandidates(image)
+				.map(extension => baseURL + apiPath(image.book.media, extension));
 
-		variants.push(baseURL + apiPath(image.book.media, smartExt));
-
-		// Add original extension URL
-		variants.push(baseURL + apiPath(image.book.media, reportedExt));
-
-		// For WebP, add both simple and double variants
-		if (reportedExt === 'webp') {
-			variants.push(baseURL + apiPath(image.book.media, 'webp'));
-			variants.push(baseURL + apiPath(image.book.media, 'webp.webp'));
-		}
-
-		// For non-WebP, add the double extension variant
-		if (reportedExt !== 'webp') {
-			variants.push(baseURL + apiPath(image.book.media, `${reportedExt}.webp`));
-		}
-
-		// Remove duplicates
 		return [ ...new Set(variants), ];
 	}
 
