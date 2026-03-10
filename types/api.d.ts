@@ -112,6 +112,15 @@ declare class API {
         path: string;
     }): Promise<object>;
     /**
+     * Text get request.
+     * @param {object} options      HTTP(S) request options.
+     * @param {string} options.host Host.
+     * @param {string} options.path Path.
+     * @returns {Promise<string>} Response body text.
+     * @private
+     */
+    private requestText;
+    /**
      * JSON get request using Puppeteer with stealth plugin.
      * @param {object} options      HTTP(S) request options.
      * @param {string} options.host Host.
@@ -120,6 +129,15 @@ declare class API {
      * @private
      */
     private requestWithPuppeteer;
+    /**
+     * Text get request using Puppeteer.
+     * @param {object} options      HTTP(S) request options.
+     * @param {string} options.host Host.
+     * @param {string} options.path Path.
+     * @returns {Promise<string>} Response body text.
+     * @private
+     */
+    private requestTextWithPuppeteer;
     /**
      * Get API arguments.
      * This is internal method.
@@ -192,6 +210,13 @@ declare class API {
      * @private
      */
     private probeCoverExtension;
+    /**
+     * Try to resolve a cover URL by parsing the gallery page HTML.
+     * @param {Image} image Cover image.
+     * @returns {Promise<?string>} Resolved cover URL if found.
+     * @private
+     */
+    private resolveCoverURLFromGalleryPage;
     /**
      * Resolve a working cover image URL by probing known filename variants.
      * @param {Image} image Cover image.

@@ -389,6 +389,61 @@ class API {
 	}
 
 	/**
+	 * Text get request.
+	 * @param {object} options      HTTP(S) request options.
+	 * @param {string} options.host Host.
+	 * @param {string} options.path Path.
+	 * @returns {Promise<string>} Response body text.
+	 * @private
+	 */
+	requestText(options) {
+		if (this.usePuppeteer) {
+			return this.requestTextWithPuppeteer(options);
+		}
+
+		let {
+			net,
+			agent,
+		} = this;
+
+		return new Promise((resolve, reject) => {
+			const headers = this.getRequestHeaders({
+				Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			});
+
+			Object.assign(options, {
+				agent,
+				headers,
+			});
+
+			net.get(options, _response => {
+				const
+					/** @type {IncomingMessage}*/
+					response = _response,
+					{ statusCode, } = response,
+					contentType = response.headers['content-type'] || '';
+
+				let error;
+				if (statusCode !== 200)
+					error = new Error(`Request failed with status code ${statusCode}`);
+				else if (!(/^(text\/html|application\/xhtml\+xml)/).test(contentType))
+					error = new Error(`Invalid content-type - expected HTML but received ${contentType}`);
+
+				if (error) {
+					response.resume();
+					reject(APIError.absorb(error, response));
+					return;
+				}
+
+				response.setEncoding('utf8');
+				let rawData = '';
+				response.on('data', chunk => rawData += chunk);
+				response.on('end', () => resolve(rawData));
+			}).on('error', error => reject(APIError.absorb(error)));
+		});
+	}
+
+	/**
 	 * JSON get request using Puppeteer with stealth plugin.
 	 * @param {object} options      HTTP(S) request options.
 	 * @param {string} options.host Host.
@@ -562,6 +617,74 @@ class API {
 				}
 			}
 
+		} finally {
+			if (browser) {
+				await browser.close();
+			}
+		}
+	}
+
+	/**
+	 * Text get request using Puppeteer.
+	 * @param {object} options      HTTP(S) request options.
+	 * @param {string} options.host Host.
+	 * @param {string} options.path Path.
+	 * @returns {Promise<string>} Response body text.
+	 * @private
+	 */
+	async requestTextWithPuppeteer(options) {
+		const puppeteer = await loadPuppeteer(),
+			url = this.buildRequestURL(options.host, options.path);
+		let browser;
+
+		try {
+			const defaultArgs = [
+				'--no-sandbox',
+				'--disable-setuid-sandbox',
+				'--disable-dev-shm-usage',
+				'--disable-blink-features=AutomationControlled',
+			];
+
+			browser = await puppeteer.launch({
+				headless         : 'new',
+				args             : [ ...defaultArgs, ...this.browserArgs || [], ],
+				ignoreDefaultArgs: [ '--enable-automation', ],
+			});
+
+			const page = await browser.newPage();
+
+			await page.setUserAgent(DEFAULT_PUPPETEER_USER_AGENT);
+
+			const cookies = this.getPuppeteerCookies(options.host);
+
+			if (cookies.length > 0) {
+				await page.setCookie(...cookies);
+			}
+
+			await page.setExtraHTTPHeaders(this.getRequestHeaders({
+				Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			}, false));
+
+			const response = await page.goto(url, {
+				waitUntil: 'domcontentloaded',
+				timeout  : 30000,
+			});
+
+			if (!response) {
+				throw new Error('Request did not receive an HTTP response');
+			}
+
+			if (!response.ok()) {
+				throw APIError.absorb(
+					new Error(`Request failed with status code ${response.status()}`),
+					{
+						statusCode: response.status(),
+						headers   : response.headers(),
+					}
+				);
+			}
+
+			return await page.content();
 		} finally {
 			if (browser) {
 				await browser.close();
@@ -760,7 +883,10 @@ class API {
 		}
 
 		const reportedExtension = image.type.extension,
-			resolvedExtension = resolutionCache.get(image.book.media),
+			resolvedState = resolutionCache.get(image.book.media),
+			resolvedExtension = resolvedState
+				? resolvedState.extension
+				: null,
 			baseExtensions = [
 				reportedExtension,
 				'jpg',
@@ -792,14 +918,40 @@ class API {
 	}
 
 	/**
+	 * Get available cover hosts without advancing round-robin state.
+	 * @returns {string[]} Cover hosts.
+	 * @private
+	 */
+	getCoverHosts() {
+		const thumbs = this.hosts && this.hosts.thumbs;
+
+		if (Array.isArray(thumbs) && thumbs.length) {
+			return [ ...new Set(thumbs.filter(Boolean)), ];
+		}
+
+		if (thumbs) {
+			return [ thumbs, ];
+		}
+
+		return [ 't.nhentai.net', ];
+	}
+
+	/**
 	 * Probe a possible cover filename extension.
 	 * @param {Image} image Cover image.
 	 * @param {string} extension Candidate extension.
 	 * @returns {Promise<boolean>} Whatever the candidate resolved to an image response.
 	 * @private
 	 */
-	probeCoverExtension(image, extension) {
-		let { host, apiPath, } = this.getAPIArgs('thumbs', 'bookCover'),
+	probeCoverExtension(image, extension, coverHost = null) {
+		let {
+				constructor: {
+					APIPath: {
+						bookCover: apiPath,
+					},
+				},
+			} = this,
+			host = coverHost || this.getAPIArgs('thumbs', 'bookCover').host,
 			{
 				net,
 				agent,
@@ -830,6 +982,45 @@ class API {
 	}
 
 	/**
+	 * Try to resolve a cover URL by parsing the gallery page HTML.
+	 * @param {Image} image Cover image.
+	 * @returns {Promise<?string>} Resolved cover URL if found.
+	 * @private
+	 */
+	async resolveCoverURLFromGalleryPage(image) {
+		if (!(image instanceof Image) || !image.isCover || !image.book || !image.book.id) {
+			return null;
+		}
+
+		const html = await this.requestText({
+				host: this.hosts.api,
+				path: `/g/${image.book.id}/`,
+			}),
+			mediaID = String(image.book.media).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+			coverMatch = html.match(new RegExp(
+				`(?:https?:)?//([^/"'\\s>]+)(/galleries/${mediaID}/cover\\.([^"'\\s>]+))`,
+				'i'
+			));
+
+		if (!coverMatch) {
+			return null;
+		}
+
+		const host = coverMatch[1],
+			path = coverMatch[2],
+			extension = coverMatch[3],
+			resolutionCache = coverResolutionState.get(this) || new Map();
+
+		coverResolutionState.set(this, resolutionCache);
+		resolutionCache.set(image.book.media, {
+			extension,
+			host,
+		});
+
+		return this.buildRequestURL(host, path);
+	}
+
+	/**
 	 * Resolve a working cover image URL by probing known filename variants.
 	 * The successful extension is cached per API instance for future `getImageURL()` calls.
 	 * @param {Image} image Cover image.
@@ -848,13 +1039,35 @@ class API {
 			coverResolutionState.set(this, resolutionCache);
 		}
 
-		for (const extension of this.getCoverExtensionCandidates(image)) {
-			if (await this.probeCoverExtension(image, extension)) {
-				resolutionCache.set(image.book.media, extension);
+		const {
+				constructor: {
+					APIPath: {
+						bookCover: apiPath,
+					},
+				},
+			} = this,
+			baseURL = `http${this.ssl ? 's' : ''}://`;
 
-				return this.getImageURL(image);
+		for (const extension of this.getCoverExtensionCandidates(image)) {
+			for (const host of this.getCoverHosts()) {
+				if (await this.probeCoverExtension(image, extension, host)) {
+					resolutionCache.set(image.book.media, {
+						extension,
+						host,
+					});
+
+					return `${baseURL}${host}${apiPath(image.book.media, extension)}`;
+				}
 			}
 		}
+
+		try {
+			const galleryPageCoverURL = await this.resolveCoverURLFromGalleryPage(image);
+
+			if (galleryPageCoverURL) {
+				return galleryPageCoverURL;
+			}
+		} catch (_error) {}
 
 		throw new Error(`Unable to resolve a working cover URL for media ${image.book.media}.`);
 	}
@@ -866,23 +1079,32 @@ class API {
 	 */
 	getImageURL(image) {
 		if (image instanceof Image) {
-			let { host, apiPath, } = image.isCover
-					? this.getAPIArgs('thumbs', 'bookCover')
-					: this.getAPIArgs('images', 'bookPage'),
-				extension = image.type.extension;
-
 			if (image.isCover) {
 				const resolutionCache = coverResolutionState.get(this),
-					resolvedExtension = resolutionCache
+					resolvedState = resolutionCache
 						? resolutionCache.get(image.book.media)
-						: null;
+						: null,
+					{
+						constructor: {
+							APIPath: {
+								bookCover: apiPath,
+							},
+						},
+					} = this,
+					host = resolvedState && resolvedState.host
+						? resolvedState.host
+						: this.getAPIArgs('thumbs', 'bookCover').host,
+					extension = resolvedState && resolvedState.extension
+						? resolvedState.extension
+						: image.type.extension;
 
-				extension = resolvedExtension || extension;
+				return `http${this.ssl ? 's' : ''}://${host}${apiPath(image.book.media, extension)}`;
 			}
 
-			return `http${this.ssl ? 's' : ''}://${host}` + (image.isCover
-				? apiPath(image.book.media, extension)
-				: apiPath(image.book.media, image.id, extension));
+			let { host, apiPath, } = this.getAPIArgs('images', 'bookPage'),
+				extension = image.type.extension;
+
+			return `http${this.ssl ? 's' : ''}://${host}${apiPath(image.book.media, image.id, extension)}`;
 		}
 		throw new Error('image must be Image instance.');
 	}
@@ -916,7 +1138,21 @@ class API {
 			throw new Error('image must be a cover Image instance.');
 		}
 
-		let { host, apiPath, } = this.getAPIArgs('thumbs', 'bookCover'),
+		const resolutionCache = coverResolutionState.get(this),
+			resolvedState = resolutionCache
+				? resolutionCache.get(image.book.media)
+				: null;
+
+		let host = resolvedState && resolvedState.host
+				? resolvedState.host
+				: this.getAPIArgs('thumbs', 'bookCover').host,
+			{
+				constructor: {
+					APIPath: {
+						bookCover: apiPath,
+					},
+				},
+			} = this,
 			baseURL = `http${this.ssl ? 's' : ''}://${host}`,
 			variants = this.getCoverExtensionCandidates(image)
 				.map(extension => baseURL + apiPath(image.book.media, extension));

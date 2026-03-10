@@ -208,22 +208,55 @@ describe('API', () => {
 
 				let api = new API({
 						hosts: {
-							thumbs: 't.nhentai.net',
+							thumbs: [
+								't1.nhentai.net',
+								't2.nhentai.net',
+								't3.nhentai.net',
+							],
 						},
 					}),
 					cover = createCover('j', 1563073),
-					probedExtensions = [];
+					probedPairs = [];
 
-				api.probeCoverExtension = (_image, extension) => {
-					probedExtensions.push(extension);
+				api.probeCoverExtension = (_image, extension, host) => {
+					probedPairs.push(`${host}:${extension}`);
 
-					return Promise.resolve(extension === 'jpg.webp');
+					return Promise.resolve(host === 't3.nhentai.net' && extension === 'jpg.webp');
 				};
 
 				const resolvedURL = await api.resolveCoverURL(cover);
 
-				assert.ok(probedExtensions.includes('jpg.webp'));
-				assert.strictEqual(resolvedURL, 'https://t.nhentai.net/galleries/1563073/cover.jpg.webp');
+				assert.ok(probedPairs.includes('t1.nhentai.net:jpg.webp'));
+				assert.ok(probedPairs.includes('t2.nhentai.net:jpg.webp'));
+				assert.ok(probedPairs.includes('t3.nhentai.net:jpg.webp'));
+				assert.strictEqual(resolvedURL, 'https://t3.nhentai.net/galleries/1563073/cover.jpg.webp');
+				assert.strictEqual(api.getImageURL(cover), resolvedURL);
+				assert.strictEqual(api.getCoverURLVariants(cover)[0], resolvedURL);
+
+			});
+
+			it('should fall back to the gallery page cover URL when direct probing fails', async () => {
+
+				let api = new API({
+						hosts: {
+							api   : 'nhentai.net',
+							thumbs: [ 't1.nhentai.net', ],
+						},
+					}),
+					cover = createCover('j', 1197044);
+
+				cover.book.id = 227091;
+				api.probeCoverExtension = () => Promise.resolve(false);
+				api.requestText = options => {
+					assert.strictEqual(options.host, 'nhentai.net');
+					assert.strictEqual(options.path, '/g/227091/');
+
+					return Promise.resolve('<meta property="og:image" content="//t4.nhentai.net/galleries/1197044/cover.jpg">');
+				};
+
+				const resolvedURL = await api.resolveCoverURL(cover);
+
+				assert.strictEqual(resolvedURL, 'https://t4.nhentai.net/galleries/1197044/cover.jpg');
 				assert.strictEqual(api.getImageURL(cover), resolvedURL);
 				assert.strictEqual(api.getCoverURLVariants(cover)[0], resolvedURL);
 

@@ -471,7 +471,20 @@ constructor(message="Unknown error"){super(message),_defineProperty(this,"origin
    * @param {Error} [error=null] Original error.
    * @param {?IncomingMessage} [httpResponse=null] HTTP response.
    * @returns {APIError}
-   */static absorb(error,httpResponse=null){return Object.assign(new APIError(error.message),{originalError:error,httpResponse:httpResponse})}}const hostRotationState=new WeakMap,coverResolutionState=new WeakMap;let cachedPuppeteer=null,stealthPluginEnabled=!1;
+   */static absorb(error,httpResponse=null){return Object.assign(new APIError(error.message),{originalError:error,httpResponse:httpResponse})}}const DEFAULT_PUPPETEER_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",hostRotationState=new WeakMap,coverResolutionState=new WeakMap;let cachedPuppeteer=null,stealthPluginEnabled=!1;async function loadPuppeteer(){if(cachedPuppeteer)return cachedPuppeteer;let puppeteer,StealthPlugin;try{
+// Dynamic import to avoid requiring puppeteer when not needed
+puppeteer=await import("puppeteer-extra"),StealthPlugin=(await import("puppeteer-extra-plugin-stealth")).default}catch(error){throw new Error("Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth")}return cachedPuppeteer=puppeteer.default,stealthPluginEnabled||(cachedPuppeteer.use(StealthPlugin()),stealthPluginEnabled=!0),cachedPuppeteer}
+/**
+ * API arguments
+ * @typedef {object} APIArgs
+ * @property {string}   host    API host.
+ * @property {Function} apiPath API endpoint URL path generator.
+ */
+/**
+ * Class used for building URL paths to nHentai API endpoints.
+ * This class is internal and has only static methods.
+ * @class
+ */
 /**
  * Class used for interaction with nHentai API.
  * @class
@@ -558,29 +571,26 @@ let{net:net,agent:agent}=this;return new Promise(((resolve,reject)=>{const heade
 /** @type {IncomingMessage}*/
 response=_response,{statusCode:statusCode}=response,contentType=response.headers["content-type"];let error;if(200!==statusCode?error=new Error(`Request failed with status code ${statusCode}`):/^application\/json/.test(contentType)||(error=new Error(`Invalid content-type - expected application/json but received ${contentType}`)),error)return response.resume(),void reject(APIError.absorb(error,response));response.setEncoding("utf8");let rawData="";response.on("data",(chunk=>rawData+=chunk)),response.on("end",(()=>{try{resolve(JSON.parse(rawData))}catch(error){reject(APIError.absorb(error,response))}}))})).on("error",(error=>reject(APIError.absorb(error))))}))}
 /**
+   * Text get request.
+   * @param {object} options      HTTP(S) request options.
+   * @param {string} options.host Host.
+   * @param {string} options.path Path.
+   * @returns {Promise<string>} Response body text.
+   * @private
+   */requestText(options){if(this.usePuppeteer)return this.requestTextWithPuppeteer(options);let{net:net,agent:agent}=this;return new Promise(((resolve,reject)=>{const headers=this.getRequestHeaders({Accept:"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"});Object.assign(options,{agent:agent,headers:headers}),net.get(options,(_response=>{const
+/** @type {IncomingMessage}*/
+response=_response,{statusCode:statusCode}=response,contentType=response.headers["content-type"]||"";let error;if(200!==statusCode?error=new Error(`Request failed with status code ${statusCode}`):/^(text\/html|application\/xhtml\+xml)/.test(contentType)||(error=new Error(`Invalid content-type - expected HTML but received ${contentType}`)),error)return response.resume(),void reject(APIError.absorb(error,response));response.setEncoding("utf8");let rawData="";response.on("data",(chunk=>rawData+=chunk)),response.on("end",(()=>resolve(rawData)))})).on("error",(error=>reject(APIError.absorb(error))))}))}
+/**
    * JSON get request using Puppeteer with stealth plugin.
    * @param {object} options      HTTP(S) request options.
    * @param {string} options.host Host.
    * @param {string} options.path Path.
    * @returns {Promise<object>} Parsed JSON.
    * @private
-   */async requestWithPuppeteer(options){const puppeteer=await async function loadPuppeteer(){if(cachedPuppeteer)return cachedPuppeteer;let puppeteer,StealthPlugin;try{
-// Dynamic import to avoid requiring puppeteer when not needed
-puppeteer=await import("puppeteer-extra"),StealthPlugin=(await import("puppeteer-extra-plugin-stealth")).default}catch(error){throw new Error("Puppeteer dependencies not found. Please install puppeteer-extra and puppeteer-extra-plugin-stealth: npm install puppeteer-extra puppeteer-extra-plugin-stealth")}return cachedPuppeteer=puppeteer.default,stealthPluginEnabled||(cachedPuppeteer.use(StealthPlugin()),stealthPluginEnabled=!0),cachedPuppeteer}
-/**
- * API arguments
- * @typedef {object} APIArgs
- * @property {string}   host    API host.
- * @property {Function} apiPath API endpoint URL path generator.
- */
-/**
- * Class used for building URL paths to nHentai API endpoints.
- * This class is internal and has only static methods.
- * @class
- */(),url=this.buildRequestURL(options.host,options.path);let browser;try{
+   */async requestWithPuppeteer(options){const puppeteer=await loadPuppeteer(),url=this.buildRequestURL(options.host,options.path);let browser;try{
 // Launch browser with provided arguments
 const defaultArgs=["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-blink-features=AutomationControlled"];browser=await puppeteer.launch({headless:"new",args:[...defaultArgs,...this.browserArgs||[]],ignoreDefaultArgs:["--enable-automation"]});const page=await browser.newPage();// Set a realistic user agent
-await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");// Set cookies if provided
+await page.setUserAgent(DEFAULT_PUPPETEER_USER_AGENT);// Set cookies if provided
 const cookies=this.getPuppeteerCookies(options.host);cookies.length>0&&await page.setCookie(...cookies);// Check if this is a redirect endpoint (like /random/)
 if(options.path.includes("/random")){
 // For redirect endpoints, capture the 302 response with location header
@@ -605,6 +615,14 @@ jsonText=jsonMatch?jsonMatch[1].trim():await page.evaluate((()=>{
 const preElement=document.querySelector("pre");return preElement?preElement.textContent:document.body.textContent;// If no pre element, return the whole body text
 // eslint-disable-next-line no-undef
 }));try{return JSON.parse(jsonText)}catch(parseError){throw new Error(`Invalid JSON response: ${parseError.message}. Response content: ${jsonText?.substring(0,200)}...`)}}}}finally{browser&&await browser.close()}}
+/**
+   * Text get request using Puppeteer.
+   * @param {object} options      HTTP(S) request options.
+   * @param {string} options.host Host.
+   * @param {string} options.path Path.
+   * @returns {Promise<string>} Response body text.
+   * @private
+   */async requestTextWithPuppeteer(options){const puppeteer=await loadPuppeteer(),url=this.buildRequestURL(options.host,options.path);let browser;try{const defaultArgs=["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-blink-features=AutomationControlled"];browser=await puppeteer.launch({headless:"new",args:[...defaultArgs,...this.browserArgs||[]],ignoreDefaultArgs:["--enable-automation"]});const page=await browser.newPage();await page.setUserAgent(DEFAULT_PUPPETEER_USER_AGENT);const cookies=this.getPuppeteerCookies(options.host);cookies.length>0&&await page.setCookie(...cookies),await page.setExtraHTTPHeaders(this.getRequestHeaders({Accept:"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},!1));const response=await page.goto(url,{waitUntil:"domcontentloaded",timeout:3e4});if(!response)throw new Error("Request did not receive an HTTP response");if(!response.ok())throw APIError.absorb(new Error(`Request failed with status code ${response.status()}`),{statusCode:response.status(),headers:response.headers()});return await page.content()}finally{browser&&await browser.close()}}
 /**
    * Get API arguments.
    * This is internal method.
@@ -665,28 +683,39 @@ return{host:Array.isArray(hostConfig)?this.selectHost(hostConfig,hostConfig[0],h
    * @param {Image} image Cover image.
    * @returns {string[]} Candidate extensions to try.
    * @private
-   */getCoverExtensionCandidates(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");let resolutionCache=coverResolutionState.get(this);resolutionCache||(resolutionCache=new Map,coverResolutionState.set(this,resolutionCache));const reportedExtension=image.type.extension,resolvedExtension=resolutionCache.get(image.book.media),baseExtensions=[reportedExtension,"jpg","png","gif","webp"],transcodedExtensions=["webp","png","jpg","gif"],candidates=[];return resolvedExtension&&candidates.push(resolvedExtension),baseExtensions.forEach((baseExtension=>{candidates.push(baseExtension),transcodedExtensions.forEach((transcodedExtension=>{candidates.push(`${baseExtension}.${transcodedExtension}`)}))})),[...new Set(candidates.filter(Boolean))]}
+   */getCoverExtensionCandidates(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");let resolutionCache=coverResolutionState.get(this);resolutionCache||(resolutionCache=new Map,coverResolutionState.set(this,resolutionCache));const reportedExtension=image.type.extension,resolvedState=resolutionCache.get(image.book.media),resolvedExtension=resolvedState?resolvedState.extension:null,baseExtensions=[reportedExtension,"jpg","png","gif","webp"],transcodedExtensions=["webp","png","jpg","gif"],candidates=[];return resolvedExtension&&candidates.push(resolvedExtension),baseExtensions.forEach((baseExtension=>{candidates.push(baseExtension),transcodedExtensions.forEach((transcodedExtension=>{candidates.push(`${baseExtension}.${transcodedExtension}`)}))})),[...new Set(candidates.filter(Boolean))]}
+/**
+   * Get available cover hosts without advancing round-robin state.
+   * @returns {string[]} Cover hosts.
+   * @private
+   */getCoverHosts(){const thumbs=this.hosts&&this.hosts.thumbs;return Array.isArray(thumbs)&&thumbs.length?[...new Set(thumbs.filter(Boolean))]:thumbs?[thumbs]:["t.nhentai.net"]}
 /**
    * Probe a possible cover filename extension.
    * @param {Image} image Cover image.
    * @param {string} extension Candidate extension.
    * @returns {Promise<boolean>} Whatever the candidate resolved to an image response.
    * @private
-   */probeCoverExtension(image,extension){let{host:host,apiPath:apiPath}=this.getAPIArgs("thumbs","bookCover"),{net:net,agent:agent}=this;return new Promise((resolve=>{net.get({host:host,path:apiPath(image.book.media,extension),agent:agent,headers:this.getRequestHeaders({Accept:"image/avif,image/webp,image/apng,image/*,*/*;q=0.8"})},(_response=>{const
+   */probeCoverExtension(image,extension,coverHost=null){let{constructor:{APIPath:{bookCover:apiPath}}}=this,host=coverHost||this.getAPIArgs("thumbs","bookCover").host,{net:net,agent:agent}=this;return new Promise((resolve=>{net.get({host:host,path:apiPath(image.book.media,extension),agent:agent,headers:this.getRequestHeaders({Accept:"image/avif,image/webp,image/apng,image/*,*/*;q=0.8"})},(_response=>{const
 /** @type {IncomingMessage}*/
 response=_response,contentType=response.headers["content-type"],isImageResponse=200===response.statusCode&&(!contentType||/^image\//.test(contentType));response.destroy(),resolve(isImageResponse)})).on("error",(()=>resolve(!1)))}))}
+/**
+   * Try to resolve a cover URL by parsing the gallery page HTML.
+   * @param {Image} image Cover image.
+   * @returns {Promise<?string>} Resolved cover URL if found.
+   * @private
+   */async resolveCoverURLFromGalleryPage(image){if(!(image instanceof Image&&image.isCover&&image.book&&image.book.id))return null;const html=await this.requestText({host:this.hosts.api,path:`/g/${image.book.id}/`}),mediaID=String(image.book.media).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),coverMatch=html.match(new RegExp(`(?:https?:)?//([^/"'\\s>]+)(/galleries/${mediaID}/cover\\.([^"'\\s>]+))`,"i"));if(!coverMatch)return null;const host=coverMatch[1],path=coverMatch[2],extension=coverMatch[3],resolutionCache=coverResolutionState.get(this)||new Map;return coverResolutionState.set(this,resolutionCache),resolutionCache.set(image.book.media,{extension:extension,host:host}),this.buildRequestURL(host,path)}
 /**
    * Resolve a working cover image URL by probing known filename variants.
    * The successful extension is cached per API instance for future `getImageURL()` calls.
    * @param {Image} image Cover image.
    * @returns {Promise<string>} Working cover image URL.
    * @async
-   */async resolveCoverURL(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");let resolutionCache=coverResolutionState.get(this);resolutionCache||(resolutionCache=new Map,coverResolutionState.set(this,resolutionCache));for(const extension of this.getCoverExtensionCandidates(image))if(await this.probeCoverExtension(image,extension))return resolutionCache.set(image.book.media,extension),this.getImageURL(image);throw new Error(`Unable to resolve a working cover URL for media ${image.book.media}.`)}
+   */async resolveCoverURL(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");let resolutionCache=coverResolutionState.get(this);resolutionCache||(resolutionCache=new Map,coverResolutionState.set(this,resolutionCache));const{constructor:{APIPath:{bookCover:apiPath}}}=this,baseURL=`http${this.ssl?"s":""}://`;for(const extension of this.getCoverExtensionCandidates(image))for(const host of this.getCoverHosts())if(await this.probeCoverExtension(image,extension,host))return resolutionCache.set(image.book.media,{extension:extension,host:host}),`${baseURL}${host}${apiPath(image.book.media,extension)}`;try{const galleryPageCoverURL=await this.resolveCoverURLFromGalleryPage(image);if(galleryPageCoverURL)return galleryPageCoverURL}catch(_error){}throw new Error(`Unable to resolve a working cover URL for media ${image.book.media}.`)}
 /**
    * Get image URL.
    * @param {Image} image Image.
    * @returns {string} Image URL.
-   */getImageURL(image){if(image instanceof Image){let{host:host,apiPath:apiPath}=image.isCover?this.getAPIArgs("thumbs","bookCover"):this.getAPIArgs("images","bookPage"),extension=image.type.extension;if(image.isCover){const resolutionCache=coverResolutionState.get(this);extension=(resolutionCache?resolutionCache.get(image.book.media):null)||extension}return`http${this.ssl?"s":""}://${host}`+(image.isCover?apiPath(image.book.media,extension):apiPath(image.book.media,image.id,extension))}throw new Error("image must be Image instance.")}
+   */getImageURL(image){if(image instanceof Image){if(image.isCover){const resolutionCache=coverResolutionState.get(this),resolvedState=resolutionCache?resolutionCache.get(image.book.media):null,{constructor:{APIPath:{bookCover:apiPath}}}=this,host=resolvedState&&resolvedState.host?resolvedState.host:this.getAPIArgs("thumbs","bookCover").host,extension=resolvedState&&resolvedState.extension?resolvedState.extension:image.type.extension;return`http${this.ssl?"s":""}://${host}${apiPath(image.book.media,extension)}`}let{host:host,apiPath:apiPath}=this.getAPIArgs("images","bookPage"),extension=image.type.extension;return`http${this.ssl?"s":""}://${host}${apiPath(image.book.media,image.id,extension)}`}throw new Error("image must be Image instance.")}
 /**
    * Get image URL with original extension (fallback for when double extension fails).
    * @param {Image} image Image.
@@ -697,7 +726,7 @@ return`http${this.ssl?"s":""}://${host}`+(image.isCover?apiPath(image.book.media
    * Get all possible cover image URL variants for testing.
    * @param {Image} image Cover image.
    * @returns {string[]} Array of possible URLs to try.
-   */getCoverURLVariants(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");let{host:host,apiPath:apiPath}=this.getAPIArgs("thumbs","bookCover"),baseURL=`http${this.ssl?"s":""}://${host}`,variants=this.getCoverExtensionCandidates(image).map((extension=>baseURL+apiPath(image.book.media,extension)));return[...new Set(variants)]}
+   */getCoverURLVariants(image){if(!(image instanceof Image&&image.isCover))throw new Error("image must be a cover Image instance.");const resolutionCache=coverResolutionState.get(this),resolvedState=resolutionCache?resolutionCache.get(image.book.media):null;let host=resolvedState&&resolvedState.host?resolvedState.host:this.getAPIArgs("thumbs","bookCover").host,{constructor:{APIPath:{bookCover:apiPath}}}=this,baseURL=`http${this.ssl?"s":""}://${host}`,variants=this.getCoverExtensionCandidates(image).map((extension=>baseURL+apiPath(image.book.media,extension)));return[...new Set(variants)]}
 /**
    * Get image thumbnail URL.
    * @param {Image} image Image.
